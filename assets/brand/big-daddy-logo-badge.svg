@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 460 460" width="460" height="460">
+  <defs>
+    
+    <path id="ringTop" d="M 70 230 A 160 160 0 0 1 390 230" fill="none"></path>
+    <path id="ringBottom" d="M 70 250 A 160 160 0 0 0 390 250" fill="none"></path>
+  </defs>
+  <circle cx="230" cy="230" r="218" fill="#0B0E16" stroke="#F08A1D" stroke-width="3"></circle>
+  <circle cx="230" cy="230" r="200" fill="none" stroke="#232B3B" stroke-width="1.5"></circle>
+  <text font-family="Special Elite, monospace" font-size="27" letter-spacing="6" fill="#F6F1E6"><textPath xlink:href="#ringTop" href="#ringTop" startOffset="50%" text-anchor="middle">BIG DADDY AND CO.</textPath></text>
+  <text font-family="Special Elite, monospace" font-size="15" letter-spacing="4" fill="#6FD0FF"><textPath xlink:href="#ringBottom" href="#ringBottom" startOffset="50%" text-anchor="middle">★  LIVE FROM THE SHRED SHED  ★</textPath></text>
+  <g transform="translate(36,150) scale(0.42)" fill="none" stroke="#F08A1D" stroke-width="10" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M 96 252 C 96 228, 112 210, 142 202 C 178 193, 220 192, 256 194 C 270 176, 286 140, 304 110 C 362 112, 432 136, 510 178 C 560 196, 602 206, 650 218 L 794 150 L 702 252 L 794 346 L 650 274 C 562 304, 470 312, 380 310 C 318 308, 248 302, 198 296 C 158 290, 122 282, 104 272 C 98 266, 96 260, 96 252 Z"></path>
+    <path d="M 100 250 C 70 242, 44 240, 20 228"></path>
+    <path d="M 104 270 C 78 280, 54 290, 32 296"></path>
+    <path d="M 116 280 C 96 296, 76 310, 56 320"></path>
+    <path d="M 134 288 C 118 304, 104 318, 88 330"></path>
+    <circle cx="168" cy="232" r="11"></circle>
+  </g>
+</svg>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="ember" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFB347"></stop>
+      <stop offset="1" stop-color="#F08A1D"></stop>
+    </linearGradient>
+    <radialGradient id="spot" cx="50%" cy="42%" r="70%">
+      <stop offset="0" stop-color="#1B2334"></stop>
+      <stop offset="1" stop-color="#07090F"></stop>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#spot)"></rect>
+  <g transform="translate(256 256) rotate(-10) scale(0.4) translate(-407 -228)">
+    <g fill="none" stroke="#F08A1D" stroke-width="17" stroke-linecap="round">
+      <path d="M 100 250 C 70 242, 44 240, 20 228"></path>
+      <path d="M 104 270 C 78 280, 54 290, 32 296"></path>
+      <path d="M 134 288 C 118 304, 104 318, 88 330"></path>
+    </g>
+    <path d="M 96 252 C 96 228, 112 210, 142 202 C 178 193, 220 192, 256 194 C 270 176, 286 140, 304 110 C 362 112, 432 136, 510 178 C 560 196, 602 206, 650 218 L 794 150 L 702 252 L 794 346 L 650 274 C 562 304, 470 312, 380 310 C 318 308, 248 302, 198 296 C 158 290, 122 282, 104 272 C 98 266, 96 260, 96 252 Z" fill="url(#ember)" stroke="#FFB347" stroke-width="3"></path>
+    <circle cx="168" cy="232" r="15" fill="#0B0E16"></circle>
+  </g>
+</svg>
