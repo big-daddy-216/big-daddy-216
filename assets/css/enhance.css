@@ -1,0 +1,39 @@
+/* Page-level overrides: responsive layout + tap-to-enlarge lightbox.
+   (Design tokens & base styles live in site.css.) */
+html, body { margin: 0; background: var(--stage-900); }
+  @media (max-width: 860px) {
+    .nm-navlinks { display: none !important; }
+    .nm-highlights { grid-template-columns: 1fr !important; grid-auto-rows: 200px !important; }
+    .nm-highlights figure { grid-row: span 1 !important; }
+    .nm-booking { grid-template-columns: 1fr !important; }
+  }
+
+body { overflow-x: hidden; }
+  /* content photos are tap-to-enlarge */
+  #shows img, #theband figure img { cursor: zoom-in; }
+  /* click-to-enlarge overlay */
+  #bd-lightbox { position: fixed; inset: 0; z-index: 10000; display: none; align-items: center; justify-content: center; background: rgba(7,9,15,.93); padding: 20px; cursor: zoom-out; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+  #bd-lightbox.open { display: flex; }
+  #bd-lightbox img { max-width: 96vw; max-height: 92vh; width: auto; height: auto; border-radius: 8px; border: 1px solid var(--border-hairline); box-shadow: 0 30px 90px rgba(0,0,0,.7); }
+  #bd-lightbox::after { content: "\2715"; position: fixed; top: 14px; right: 20px; font: 300 30px/1 system-ui, sans-serif; color: var(--bone-300); pointer-events: none; }
+  /* album detail modal (click a cover in The Records): cover + blurb, stacks on phones */
+  @media (max-width: 760px) {
+    .nm-album-modal { grid-template-columns: 1fr !important; gap: 20px !important;
+                      max-height: 88vh; overflow-y: auto; align-content: start; }
+    .nm-album-modal img { max-height: 46vh !important; }
+  }
+  /* ---- tablet / phone ---- */
+  @media (max-width: 860px) {
+    .nm-hero-wm [aria-label="Big Daddy and Co."] > span:first-child { font-size: clamp(52px, 14.5vw, 128px) !important; }
+    #tour [style*="84px 1fr auto auto"] { grid-template-columns: auto minmax(0,1fr) auto !important; gap: 12px !important; padding: 14px 2px !important; }
+    #tour [style*="84px 1fr auto auto"] > div:nth-child(3) { display: none !important; }
+    #book [style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: 1fr !important; }
+  }
+  /* ---- phones: posters 2-up, smaller badge ---- */
+  @media (max-width: 700px) {
+    .nm-members { grid-template-columns: repeat(2, 1fr) !important; }
+  }
+  @media (max-width: 560px) {
+    .nm-tour-badge { width: 150px !important; height: 150px !important; }
+    #tour [style*="84px 1fr auto auto"] [style*="font-size: 40px"] { font-size: 32px !important; }
+  }
