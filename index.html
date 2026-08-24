@@ -18,8 +18,8 @@
       highlightArena:      "assets/photos/arena-keys.jpg",           // Live & Loud — "Sold-out arena" (tall tile)
       highlightShredShed:  "assets/photos/shred-shed-full.jpg",      // Live & Loud — "The Shred Shed"
       highlightBasement:   "assets/photos/shred-shed-wide.jpg",      // Live & Loud — "Basement floor · stars & stripes"
-      memberTimNash:       "assets/posters/tim-keyboard-commando.jpg", // The Band — Tim Nash (Keys)
-      memberDylanMerriman: "assets/posters/dylan-bass-legend.jpg",     // The Band — Dylan Merriman (Bass)
+      memberTimNash:       "assets/posters/tim-keyboard-commando.jpg", // The Band — Tim (Keys)
+      memberDylanMerriman: "assets/posters/dylan-bass-legend.jpg",     // The Band — Dylan (Bass)
       memberDirtyMike:     "assets/posters/dirty-mike.jpg",             // The Band — Dirty Mike (Guitar)
       memberTyler:         "assets/posters/tyler-on-the-drums.jpg",     // The Band — Tyler (Drums)
 
@@ -151,7 +151,7 @@
     const awards = [
       { year: '2024', title: 'Grammy Nomination', detail: 'Best Jam Performance', tone: 'ember' },
       { year: '2025', title: 'Battle of the Beyblades', detail: 'Third Place Brawler', tone: 'bone' },
-      { year: '2025', title: 'Festival Honor', detail: 'Headliner — Dylan\'s Basement', tone: 'volt' },
+      { year: '2025', title: 'Festival Honor', detail: 'Headliner — The Shred Shed', tone: 'volt' },
       { year: '2026', title: 'Best Band', detail: 'Voted by the Co.', tone: 'bone' },
     ];
     return (
@@ -308,8 +308,8 @@
   }
 
   const MEMBERS = [
-    { src: window.BD_IMAGES.memberTimNash, nickname: 'The Keyboard Commando', name: 'Tim Nash', instrument: "Keys · Deborah's Son" },
-    { src: window.BD_IMAGES.memberDylanMerriman, nickname: 'The Bass Legend', name: 'Dylan Merriman', instrument: 'Bass' },
+    { src: window.BD_IMAGES.memberTimNash, nickname: 'The Keyboard Commando', name: 'Tim', instrument: "Keys · Deborah's Son" },
+    { src: window.BD_IMAGES.memberDylanMerriman, nickname: 'The Bass Legend', name: 'Dylan', instrument: 'Bass' },
     { src: window.BD_IMAGES.memberDirtyMike, nickname: 'On the Strings', name: 'Dirty Mike', instrument: 'Guitar' },
     { src: window.BD_IMAGES.memberTyler, nickname: 'On the Drums', name: 'Tyler', instrument: 'Drums' },
   ];
@@ -336,10 +336,10 @@
   }
 
   const TOUR = [
-    { month: 'JUL', day: '06', city: 'Shaker Hts, OH', venue: 'Dylan\'s Basement', status: 'soldout' },
-    { month: 'JUL', day: '13', city: 'Shaker Hts, OH', venue: 'Dylan\'s Basement', status: 'lowtix' },
-    { month: 'JUL', day: '20', city: 'Shaker Hts, OH', venue: 'Dylan\'s Basement', status: 'lowtix' },
-    { month: 'JUL', day: '27', city: 'Shaker Hts, OH', venue: 'Dylan\'s Basement', status: 'lowtix' },
+    { month: 'JUL', day: '06', city: 'Shaker Hts, OH', venue: 'The Shred Shed', status: 'soldout' },
+    { month: 'JUL', day: '13', city: 'Shaker Hts, OH', venue: 'The Shred Shed', status: 'lowtix' },
+    { month: 'JUL', day: '20', city: 'Shaker Hts, OH', venue: 'The Shred Shed', status: 'lowtix' },
+    { month: 'JUL', day: '27', city: 'Shaker Hts, OH', venue: 'The Shred Shed', status: 'lowtix' },
     { month: 'AUG', day: '08', city: 'New York, NY', venue: 'Madison Square Garden', status: 'soldout' },
     { month: 'AUG', day: '09', city: 'New York, NY', venue: 'Madison Square Garden', status: 'soldout' },
     { month: 'AUG', day: '12', city: 'East Rutherford, NJ', venue: 'MetLife Stadium', status: 'lowtix' },
@@ -411,7 +411,7 @@
                   <Fld label="Email" type="email" placeholder="you@venue.com" required />
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                  <Fld label="Venue / City" placeholder="Dylan's Basement, Shaker Hts" required />
+                  <Fld label="Venue / City" placeholder="Madison Square Garden" required />
                   <Fld label="Event Type" type="select" options={[
                     { value: 'club', label: 'Club / Bar' },
                     { value: 'festival', label: 'Festival' },
