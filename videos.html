@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Videos · Big Daddy and Co.</title>
+
+  <!-- =======================================================================
+       THE VIDEO PAGE
+
+       To put a clip up, you edit ONE file: assets/data/catalog.js. Upload
+       the mp4 and a poster still to the R2 bucket, then add a block there
+       with the keys they landed under. Nothing in this file needs touching.
+
+       Full instructions: EDITING.md, "Putting music and videos up".
+       ======================================================================= -->
+
+  <!-- Brand kit: icons, PWA manifest, social cards -->
+  <link rel="icon" href="assets/brand/big-daddy-favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="assets/brand/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="icon" href="assets/brand/favicon-16.png" sizes="16x16" type="image/png">
+  <link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png">
+  <link rel="manifest" href="assets/brand/site.webmanifest">
+  <meta name="theme-color" content="#0B0E16">
+  <meta name="description" content="Music videos, teasers and whatever else got filmed. Big Daddy and Co., Cleveland, Ohio.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Videos — Big Daddy and Co.">
+  <meta property="og:description" content="Music videos, teasers and whatever else got filmed.">
+  <meta property="og:url" content="https://bigdaddyand.co/videos.html">
+  <meta property="og:image" content="https://bigdaddyand.co/assets/brand/big-daddy-og-banner.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://bigdaddyand.co/assets/brand/big-daddy-og-banner.png">
+
+  <!-- Styles: design system, page overrides, then this page's own bits -->
+  <link rel="stylesheet" href="assets/css/site.css">
+  <link rel="stylesheet" href="assets/css/enhance.css">
+  <link rel="stylesheet" href="assets/css/media.css">
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Libraries (vendored locally so the site works offline / from file://) -->
+  <script src="assets/js/react.production.min.js"></script>
+  <script src="assets/js/react-dom.production.min.js"></script>
+  <script src="assets/js/babel.min.js"></script>
+
+  <!-- Reusable design-system components (Button, Card, Stamp, …) -->
+  <script src="assets/js/design-system.js"></script>
+
+  <!-- The top bar, shared with every other page. -->
+  <script src="assets/js/site-nav.js"></script>
+
+  <!-- The library itself, and the helper that resolves bucket keys. -->
+  <script src="assets/data/catalog.js"></script>
+  <script src="assets/js/catalog.js"></script>
+
+  <script type="text/babel">
+  /* Big Daddy and Co. — the video page.
+
+     A grid of poster stills; clicking one opens a full-screen player. The
+     grid holds no <video> elements at all — only images — so a page of a
+     dozen clips costs a dozen thumbnails rather than a dozen video
+     streams. The player is created when something is actually chosen. */
+
+  const { Button, Stamp, Card } = window.NashSMomDesignSystem_77335a;
+  const SiteNav = window.BDNav.Nav;
+  const Catalog = window.BDCatalog;
+
+  /* ---- the full-screen player ------------------------------------- */
+  function Player({ video, onClose }) {
+    const closeRef = React.useRef(null);
+
+    React.useEffect(() => {
+      const root = document.documentElement;
+      const previous = root.style.overflow;
+      root.style.overflow = 'hidden';           // same trick lightbox.js uses
+
+      function onKey(ev) { if (ev.key === 'Escape') onClose(); }
+      document.addEventListener('keydown', onKey);
+      if (closeRef.current) closeRef.current.focus();
+
+      return () => {
+        document.removeEventListener('keydown', onKey);
+        root.style.overflow = previous;
+      };
+    }, [onClose]);
+
+    return ReactDOM.createPortal(
+      <div className="md-player" role="dialog" aria-modal="true" aria-label={video.title}
+           onClick={(ev) => { if (ev.target === ev.currentTarget) onClose(); }}>
+        <button type="button" className="md-player-close" ref={closeRef}
+                aria-label="Close" onClick={onClose}>✕</button>
+        <figure className="md-player-frame">
+          {/* autoPlay because opening it IS the request to play it. */}
+          <video src={video.src} poster={video.poster} controls autoPlay playsInline
+                 preload="metadata" />
+          <figcaption>
+            <strong>{video.title}</strong>
+            {video.blurb && <span> — {video.blurb}</span>}
+          </figcaption>
+        </figure>
+      </div>,
+      document.body
+    );
+  }
+
+  function VideosPage() {
+    const [videos, setVideos] = React.useState(null);   // null = still loading
+    const [open, setOpen] = React.useState(null);
+
+    React.useEffect(() => { Catalog.load('videos').then(setVideos); }, []);
+
+    return (
+      <React.Fragment>
+        <SiteNav current="videos" cta={{ label: 'Book Us', href: 'index.html#book' }} />
+
+        <main className="md-page">
+          <header className="md-hero">
+            <Stamp>Roll Tape</Stamp>
+            <h1 className="md-hero-title">Videos</h1>
+            <p className="md-hero-blurb">
+              Music videos, teasers, and whatever else somebody happened to be
+              filming.
+            </p>
+          </header>
+
+          {videos === null && <p className="md-empty">Fetching the tapes…</p>}
+
+          {videos && !videos.length && (
+            <Card>
+              <p className="md-empty">
+                Nothing up here yet. Try the <a href="music.html">music</a> or the{' '}
+                <a href="jam.html">jam board</a> in the meantime.
+              </p>
+            </Card>
+          )}
+
+          {videos && !!videos.length && (
+            <ul className="md-videogrid">
+              {videos.map((video) => (
+                <li key={video.slug}>
+                  <button type="button" className="md-videotile" onClick={() => setOpen(video)}>
+                    {video.poster
+                      ? <img src={video.poster} alt="" loading="lazy" />
+                      : <span className="md-album-blank" aria-hidden="true">{video.title}</span>}
+                    <span className="md-videotile-play" aria-hidden="true">▶</span>
+                    <span className="md-videotile-label">
+                      <strong>{video.title}</strong>
+                      {video.year && <span>{video.year}</span>}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </main>
+
+        {open && <Player video={open} onClose={() => setOpen(null)} />}
+
+        <footer className="md-footer">
+          <p>© {new Date().getFullYear()} Big Daddy and Co. · Cleveland, Ohio</p>
+          <p><a href="index.html">Back to the band</a></p>
+        </footer>
+      </React.Fragment>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<VideosPage />);
+  </script>
+</body>
+</html>
