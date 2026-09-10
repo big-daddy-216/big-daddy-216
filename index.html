@@ -98,7 +98,16 @@
 
   const { Wordmark, Button, Stamp, SectionHeading, AwardLaurel } = window.NashSMomDesignSystem_77335a;
 
-  const NAV_LINKS = ['Shows', 'The Band', 'Records', 'Book Us'];
+  /* Top nav links. Each is a label plus where it goes — a '#name' jumps
+     to a section of this page, anything else is a normal link to another
+     page (that's how "Jam With Us" reaches jam.html). */
+  const NAV_LINKS = [
+    { label: 'Shows',       href: '#shows' },
+    { label: 'The Band',    href: '#theband' },
+    { label: 'Records',     href: '#records' },
+    { label: 'Jam With Us', href: 'jam.html' },
+    { label: 'Book Us',     href: '#book' }
+  ];
 
   function Nav({ onBook }) {
     const [solid, setSolid] = React.useState(false);
@@ -123,11 +132,11 @@
         <nav style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
           <div style={{ display: 'flex', gap: 26 }} className="nm-navlinks">
             {NAV_LINKS.map((l) => (
-              <a key={l} href={'#' + l.toLowerCase().replace(/\s/g, '')}
+              <a key={l.label} href={l.href}
                  style={{ fontFamily: 'var(--font-heading)', fontWeight: 500, fontSize: 14,
                           textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--bone-300)' }}
                  onMouseEnter={(e) => e.target.style.color = 'var(--ember-glow)'}
-                 onMouseLeave={(e) => e.target.style.color = 'var(--bone-300)'}>{l}</a>
+                 onMouseLeave={(e) => e.target.style.color = 'var(--bone-300)'}>{l.label}</a>
             ))}
           </div>
           <Button variant="primary" size="sm" onClick={onBook}>Buy Tickets</Button>
@@ -136,7 +145,7 @@
     );
   }
 
-  function Hero({ onTickets, onBook }) {
+  function Hero({ onTickets }) {
     return (
       <section className="nm-grain" style={{
         position: 'relative', minHeight: '92vh', display: 'flex', flexDirection: 'column',
@@ -160,7 +169,9 @@
           </p>
           <div style={{ display: 'flex', gap: 14, marginTop: 30, flexWrap: 'wrap' }}>
             <Button variant="primary" size="lg" onClick={onTickets}>See Tour Dates</Button>
-            <Button variant="outline" size="lg" onClick={onBook}>Book the Band</Button>
+            {/* The jam page gets the second hero slot. Booking is still one
+                click away from the nav, the footer and the tour section. */}
+            <Button variant="outline" size="lg" as="a" href="jam.html">Jam With Us</Button>
           </div>
         </div>
       </section>
@@ -714,18 +725,25 @@
               </p>
             </div>
             <div style={{ display: 'flex', gap: 48, flexWrap: 'wrap' }}>
+              {/* Footer links. An item is either just a label (a
+                  placeholder, still to be pointed somewhere) or a
+                  [label, href] pair for one that actually goes somewhere. */}
               {[['Listen', ['Spotify', 'Apple Music', 'Bandcamp', 'YouTube']],
                 ['Follow', ['Instagram', 'TikTok', 'X / Twitter']],
-                ['Band', ['Tour', 'Merch', 'Press Kit', 'Book Us']]].map(([h, items]) => (
+                ['Band', [['Tour', '#tour'], ['Jam With Us', 'jam.html'], 'Merch', 'Press Kit', ['Book Us', '#book']]]].map(([h, items]) => (
                 <div key={h}>
                   <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 13,
                                 textTransform: 'uppercase', letterSpacing: '.14em', color: 'var(--ember-500)', marginBottom: 12 }}>{h}</div>
-                  {items.map((it) => (
-                    <a key={it} href="#" style={{ display: 'block', fontSize: 14, color: 'var(--bone-300)',
-                       marginBottom: 8 }}
-                       onMouseEnter={(e) => e.target.style.color = 'var(--bone-100)'}
-                       onMouseLeave={(e) => e.target.style.color = 'var(--bone-300)'}>{it}</a>
-                  ))}
+                  {items.map((it) => {
+                    const label = Array.isArray(it) ? it[0] : it;
+                    const href = Array.isArray(it) ? it[1] : '#';
+                    return (
+                      <a key={label} href={href} style={{ display: 'block', fontSize: 14, color: 'var(--bone-300)',
+                         marginBottom: 8 }}
+                         onMouseEnter={(e) => e.target.style.color = 'var(--bone-100)'}
+                         onMouseLeave={(e) => e.target.style.color = 'var(--bone-300)'}>{label}</a>
+                    );
+                  })}
                 </div>
               ))}
             </div>
@@ -753,7 +771,7 @@
         return (
           <React.Fragment>
             <Nav onBook={() => scrollTo('tour')} />
-            <Hero onTickets={() => scrollTo('tour')} onBook={() => scrollTo('book')} />
+            <Hero onTickets={() => scrollTo('tour')} />
             <AwardsStrip />
             <VideoBanner />
             <Highlights />

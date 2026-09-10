@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Join the Company — Jam With Us! · Big Daddy and Co.</title>
+
+  <!-- =======================================================================
+       WHERE THE LOOPS GET SENT
+       This is the only block you need to touch to turn the page on.
+
+       1. Go to  https://web3forms.com  and paste in the band's email
+          address. They email back an "access key" — a long string of
+          letters and numbers. It's free (250 loops a month) and there's
+          no account to create.
+       2. Paste that key below, replacing the placeholder text.
+       3. Save. That's it.
+
+       Until you do that, the page still works — visitors can play,
+       record and download their loop — but the Submit button tells them
+       plainly that applications aren't open yet, rather than pretending
+       it sent something.
+
+       The access key is meant to be public (it only ever lets someone
+       send mail TO you), so it is safe sitting here in the page.
+       ======================================================================== -->
+  <script>
+    window.BD_JAM = {
+      accessKey: "PASTE-YOUR-WEB3FORMS-ACCESS-KEY-HERE",
+
+      // Where the "listen to this loop" link in your email should point.
+      // Kept as a real address rather than read from the browser, so a
+      // loop recorded on a test server still emails you a working link.
+      siteUrl: "https://bigdaddyand.co/jam.html",
+
+      // The subject line on the emails you receive.
+      subject: "New application from the Jam With Us page"
+    };
+  </script>
+
+  <!-- Brand kit: icons, PWA manifest, social cards -->
+  <link rel="icon" href="assets/brand/big-daddy-favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="assets/brand/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="icon" href="assets/brand/favicon-16.png" sizes="16x16" type="image/png">
+  <link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png">
+  <link rel="manifest" href="assets/brand/site.webmanifest">
+  <meta name="theme-color" content="#0B0E16">
+  <meta name="description" content="Big Daddy and Co. is hiring. Fully remote, Cleveland roots, applications reviewed on a rolling basis. Record a one-bar loop in your browser and submit it for jams and paying gigs alike.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Careers at Big Daddy and Co. — Jam With Us!">
+  <meta property="og:description" content="Now hiring. Fully remote, 216 born and raised, no experience necessary. Record a loop in your browser and submit it for review.">
+  <meta property="og:url" content="https://bigdaddyand.co/jam.html">
+  <meta property="og:image" content="https://bigdaddyand.co/assets/brand/big-daddy-og-banner.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://bigdaddyand.co/assets/brand/big-daddy-og-banner.png">
+
+  <!-- Styles: design system, page overrides, then this page's own bits -->
+  <link rel="stylesheet" href="assets/css/site.css">
+  <link rel="stylesheet" href="assets/css/enhance.css">
+  <link rel="stylesheet" href="assets/css/jam.css">
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Libraries (vendored locally so the site works offline / from file://) -->
+  <script src="assets/js/react.production.min.js"></script>
+  <script src="assets/js/react-dom.production.min.js"></script>
+  <script src="assets/js/babel.min.js"></script>
+
+  <!-- Reusable design-system components (Button, Card, Field, Stamp, …) -->
+  <script src="assets/js/design-system.js"></script>
+
+  <!-- The synth itself: sound, MIDI export, loop codes. No interface. -->
+  <script src="assets/js/jam-engine.js"></script>
+
+  <!-- ===================================================================
+       EDITABLE PAGE CONTENT
+       The words on this page live in the JSX below. Edit the text inside
+       the quotes, save, reload. Each section is labelled with a comment.
+       =================================================================== -->
+  <script type="text/babel">
+  /* Big Daddy and Co. — "Join the Company" jam page.
+     Uses the shared design-system primitives, same as index.html. */
+
+  const { Wordmark, Button, Stamp, SectionHeading, Card, Field } =
+    window.NashSMomDesignSystem_77335a;
+
+  const E = window.BDJam;                 // the sound + MIDI engine
+  const CONFIG = window.BD_JAM || {};
+  const STEPS = E.STEPS;
+  const ALL_STEPS = Array.from({ length: STEPS }, (_, i) => i);
+
+  /* Is the Web3Forms key actually filled in? Until it is, the page has
+     to say so rather than fake a successful send. */
+  const FORM_READY = !!CONFIG.accessKey && CONFIG.accessKey.indexOf('PASTE-YOUR') === -1;
+
+  /* -----------------------------------------------------------------
+     COMPUTER-KEYBOARD LAYOUT
+     -----------------------------------------------------------------
+     Every one of the 25 keys on screen is playable without moving your
+     hands, by treating the computer keyboard as two little pianos
+     stacked on top of each other:
+
+       upper octave   q 2 w 3 e r 5 t 6 y 7 u i
+       lower octave   z s x d c v g b h n j m , l . ; /
+
+     In each pair, the flat row is the white notes and the row above it
+     holds their sharps — sitting where the black keys would be. This is
+     the layout trackers and DAWs have used for decades, and it happens
+     to fit exactly: seventeen slots on the bottom, thirteen up top, and
+     no key on screen left stranded.
+
+     The two rows deliberately overlap in the middle (the bottom row runs
+     five notes into the upper octave), which is what lets you play
+     across the join without jumping rows. */
+  const LOWER_ROW_KEYS = ['z', 's', 'x', 'd', 'c', 'v', 'g', 'b', 'h', 'n', 'j', 'm', ',', 'l', '.', ';', '/'];
+  const UPPER_ROW_KEYS = ['q', '2', 'w', '3', 'e', 'r', '5', 't', '6', 'y', '7', 'u', 'i'];
+
+  const KEY_MAP = {};
+  LOWER_ROW_KEYS.forEach((k, i) => { KEY_MAP[k] = i; });          // semitones 0–16
+  UPPER_ROW_KEYS.forEach((k, i) => { KEY_MAP[k] = i + 12; });     // semitones 12–24
+
+  /* What to print on each key. Where both rows reach a note, the upper
+     row wins the label, so the second octave on screen reads as the
+     top row of the computer keyboard. The lower-row key still works. */
+  const HINT_FOR_SEMI = {};
+  LOWER_ROW_KEYS.forEach((k, i) => { HINT_FOR_SEMI[i] = k; });
+  UPPER_ROW_KEYS.forEach((k, i) => { HINT_FOR_SEMI[i + 12] = k; });
+
+  const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const WHITE_SEMIS = [0, 2, 4, 5, 7, 9, 11];
+  const BLACK_AFTER = [0, 1, 3, 4, 5];   // which white key each black sits after
+
+  function noteLabel(midi) {
+    return NOTE_NAMES[midi % 12] + (Math.floor(midi / 12) - 1);
+  }
+
+  /* The keyboard is built as two octave-sized groups rather than one
+     long run of keys. Side by side on a wide screen they read as a
+     single continuous keyboard; on a phone they stack instead, which
+     doubles the width of every key and makes them big enough to hit
+     with a thumb. Same notes either way.
+
+     The lower group is a plain octave (seven white keys); the upper one
+     carries the extra C that closes the keyboard off (eight). */
+  function buildOctaveGroup(baseMidi, startSemi, whiteCount) {
+    const whites = [];
+    for (let i = 0; i < whiteCount; i++) {
+      const semi = startSemi + (i < WHITE_SEMIS.length ? WHITE_SEMIS[i] : 12);
+      whites.push({ semi, midi: baseMidi + semi });
+    }
+    const blacks = BLACK_AFTER.map((wi) => {
+      const semi = startSemi + WHITE_SEMIS[wi] + 1;
+      return { semi, midi: baseMidi + semi, afterWhite: wi };
+    });
+    return { whites, blacks, whiteCount };
+  }
+
+  function buildKeyboard(baseMidi) {
+    return [
+      buildOctaveGroup(baseMidi, 0, 7),
+      buildOctaveGroup(baseMidi, 12, 8)
+    ];
+  }
+
+  /* Read a loop out of the address bar, if someone followed a link.
+     The part after the # is never sent to any server — it only ever
+     travels in the email — so a loop stays between the sender and the
+     band. */
+  function readLoopFromUrl() {
+    const m = /(?:^|[#&])loop=([A-Za-z0-9_\-]+)/.exec(window.location.hash || '');
+    if (!m) return { pattern: E.emptyPattern(), source: 'new' };
+    const decoded = E.decodeLoop(m[1]);
+    return decoded
+      ? { pattern: decoded, source: 'link' }
+      : { pattern: E.emptyPattern(), source: 'broken' };
+  }
+
+  /* =================================================================
+     NAV — links point back to the homepage's sections.
+     ================================================================= */
+  function JamNav() {
+    const [solid, setSolid] = React.useState(false);
+    React.useEffect(() => {
+      const onScroll = () => setSolid(window.scrollY > 40);
+      window.addEventListener('scroll', onScroll);
+      return () => window.removeEventListener('scroll', onScroll);
+    }, []);
+
+    const links = [
+      ['Shows', 'index.html#shows'],
+      ['The Band', 'index.html#theband'],
+      ['Records', 'index.html#records'],
+      ['Book Us', 'index.html#book']
+    ];
+
+    return (
+      <header className="jam-header" style={{
+        position: 'sticky', top: 0, zIndex: 50,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '14px clamp(20px,5vw,64px)',
+        background: solid ? 'rgba(7,9,15,0.86)' : 'transparent',
+        backdropFilter: solid ? 'blur(10px) saturate(1.2)' : 'none',
+        borderBottom: solid ? '1px solid var(--border-hairline)' : '1px solid transparent',
+        transition: 'all var(--dur-med) var(--ease-out)'
+      }}>
+        <a href="index.html" aria-label="Big Daddy and Co. — home">
+          <img src="assets/brand/big-daddy-wordmark.svg" alt="Big Daddy and Co."
+               style={{ height: 34, width: 'auto', display: 'block' }} />
+        </a>
+        <nav style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
+          <div style={{ display: 'flex', gap: 26 }} className="nm-navlinks">
+            {links.map(([label, href]) => (
+              <a key={label} href={href}
+                 style={{ fontFamily: 'var(--font-heading)', fontWeight: 500, fontSize: 14,
+                          textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--bone-300)' }}
+                 onMouseEnter={(e) => e.target.style.color = 'var(--ember-glow)'}
+                 onMouseLeave={(e) => e.target.style.color = 'var(--bone-300)'}>{label}</a>
+            ))}
+          </div>
+          <Button variant="outline" size="sm" as="a" href="index.html">Back to the Band</Button>
+        </nav>
+      </header>
+    );
+  }
+
+  /* =================================================================
+     INTRO — the job posting.
+     ================================================================= */
+  function JamIntro({ source }) {
+    return (
+      <section className="nm-grain" style={{ position: 'relative', padding: 'var(--section-y) 0 var(--sp-7)' }}>
+        <div className="nm-container" style={{ position: 'relative', zIndex: 2 }}>
+          <SectionHeading kicker="Careers · Now Hiring" title={<span>Jam<br/>With Us!</span>} glow />
+          <p style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-lead)',
+                      color: 'var(--bone-300)', marginTop: 22, maxWidth: 640, lineHeight: 1.5 }}>
+            <strong style={{ color: 'var(--bone-100)' }}>Big Daddy and Co. is growing.</strong>{' '}
+            We're a Cleveland jam band with four guys, one shed, and no HR department to speak of,
+            and we are actively seeking talent for jams, gigs, and whatever it is we're doing on a
+            Tuesday. This role is fully remote — the studio is on this page.
+          </p>
+          <p style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-lead)',
+                      color: 'var(--bone-300)', marginTop: 16, maxWidth: 640, lineHeight: 1.5 }}>
+            Program a beat, play something over it, give it your absolute best, and submit it below
+            for review. We read every application. We are, admittedly, easily impressed.
+          </p>
+          <div style={{ display: 'flex', gap: 10, marginTop: 26, flexWrap: 'wrap' }}>
+            <Stamp tone="ember" rotate={-2}>Fully remote</Stamp>
+            <Stamp tone="bone">216 born &amp; raised</Stamp>
+            <Stamp tone="volt">Rolling applications</Stamp>
+            <Stamp tone="bone" rotate={1}>No experience necessary</Stamp>
+          </div>
+
+          {source === 'link' && (
+            <div className="jam-status" data-tone="ok" style={{ marginTop: 26, maxWidth: 640 }}>
+              <strong>Application under review.</strong> This loop arrived from a link — hit play
+              to hear it exactly as it was submitted, or grab the .mid and drop it into a session.
+              Please evaluate the candidate fairly and with an open heart.
+            </div>
+          )}
+          {source === 'broken' && (
+            <div className="jam-status" data-tone="warn" style={{ marginTop: 26, maxWidth: 640 }}>
+              <strong>This application appears to be damaged in transit.</strong> The code in the
+              address bar didn't decode, so we've started you with a blank grid. Ask whoever sent
+              it for the whole link — they're easy to cut short.
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  }
+
+  /* =================================================================
+     TRANSPORT — play, record, metronome, tempo, voice.
+     ================================================================= */
+  function Transport(props) {
+    return (
+      <div className="jam-transport">
+        <div className="jam-transport-group">
+          <Button variant={props.playing ? 'flag' : 'primary'} size="md" onClick={props.onPlay}>
+            {props.playing ? 'Stop' : 'Play'}
+          </Button>
+          <Button variant={props.recording ? 'flag' : 'outline'} size="md"
+                  onClick={props.onRecord}
+                  className={props.recording ? 'jam-rec-armed' : ''}
+                  aria-pressed={props.recording}>
+            {props.recording ? '● Recording' : '● Record'}
+          </Button>
+          <Button variant={props.metronome ? 'primary' : 'ghost'} size="sm"
+                  onClick={props.onMetronome} aria-pressed={props.metronome}>
+            Click
+          </Button>
+        </div>
+
+        <div className="jam-tempo">
+          <span className="jam-tempo-unit">Tempo</span>
+          <input type="range" min={E.BPM_MIN} max={E.BPM_MAX} value={props.bpm}
+                 aria-label="Tempo in beats per minute"
+                 onChange={(e) => props.onBpm(Number(e.target.value))} />
+          <span className="jam-tempo-readout">{props.bpm}</span>
+          <span className="jam-tempo-unit">BPM</span>
+        </div>
+
+        <div className="jam-transport-group">
+          <span className="jam-tempo-unit">Voice</span>
+          {E.VOICES.map((v) => (
+            <Button key={v.id} size="sm" variant={props.voice === v.id ? 'primary' : 'ghost'}
+                    aria-pressed={props.voice === v.id}
+                    onClick={() => props.onVoice(v.id)}>{v.label}</Button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  /* =================================================================
+     THE GRID — six drum lanes plus a read-out of the keys track.
+     ================================================================= */
+  function StepGrid({ pattern, uiStep, onToggle, onAudition, noteSteps }) {
+    return (
+      <div className="jam-grid-scroll">
+        <div className="jam-grid">
+          <div className="jam-row jam-ruler" aria-hidden="true">
+            <div />
+            {ALL_STEPS.map((s) => (
+              <div key={s} className="jam-tick" data-beat={s % 4 === 0}>
+                {s % 4 === 0 ? (s / 4) + 1 : '·'}
+              </div>
+            ))}
+          </div>
+
+          {E.LANES.map((lane, li) => (
+            <div className="jam-row" key={lane.id}>
+              <button type="button" className="jam-lane-label"
+                      onClick={() => onAudition(lane.id)}
+                      title={'Hear the ' + lane.label}>{lane.label}</button>
+              {ALL_STEPS.map((s) => (
+                <button key={s} type="button" className="jam-cell"
+                        data-beat={s % 4 === 0}
+                        data-playing={uiStep === s}
+                        aria-pressed={!!pattern.drums[li][s]}
+                        aria-label={lane.label + ', step ' + (s + 1)}
+                        onClick={() => onToggle(li, s)} />
+              ))}
+            </div>
+          ))}
+
+          {/* Not editable by clicking — this row shows what you played. */}
+          <div className="jam-row">
+            <div className="jam-lane-label" style={{ cursor: 'default', color: 'var(--volt-glow)' }}>Keys</div>
+            {ALL_STEPS.map((s) => (
+              <div key={s} className="jam-cell"
+                   data-beat={s % 4 === 0}
+                   data-playing={uiStep === s}
+                   data-note={!!noteSteps[s]}
+                   aria-hidden="true" />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* =================================================================
+     THE KEYBOARD
+     ================================================================= */
+  function Keyboard({ baseMidi, down, onPress, onRelease }) {
+    const groups = buildKeyboard(baseMidi);
+
+    /* Pointer capture means a finger that slides off a key still sends
+       its release to that key, instead of leaving a note ringing. */
+    const bind = (midi) => ({
+      onPointerDown: (e) => {
+        e.preventDefault();
+        if (e.currentTarget.setPointerCapture) {
+          try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+        }
+        onPress(midi);
+      },
+      onPointerUp: () => onRelease(midi),
+      onPointerCancel: () => onRelease(midi),
+      onLostPointerCapture: () => onRelease(midi)
+    });
+
+    return (
+      <div className="jam-keyboard">
+        {groups.map((g, gi) => {
+          // Black keys are placed as a share of *this group's* width, so
+          // the maths holds whether the groups sit side by side or stack.
+          const unit = 100 / g.whiteCount;
+          const blackWidth = unit * 0.62;
+          return (
+            <div className="jam-keys" key={gi} style={{ flexGrow: g.whiteCount }}>
+              {g.whites.map((k) => (
+                <button key={k.semi} type="button" className="jam-key-white"
+                        data-down={!!down[k.midi]}
+                        aria-label={noteLabel(k.midi)}
+                        {...bind(k.midi)}>
+                  <span className="jam-key-hint">{HINT_FOR_SEMI[k.semi] || ''}</span>
+                </button>
+              ))}
+              {g.blacks.map((k) => (
+                <button key={k.semi} type="button" className="jam-key-black"
+                        data-down={!!down[k.midi]}
+                        aria-label={noteLabel(k.midi)}
+                        style={{
+                          left: 'calc(' + ((k.afterWhite + 1) * unit) + '% - ' + (blackWidth / 2) + '%)',
+                          width: blackWidth + '%'
+                        }}
+                        {...bind(k.midi)}>
+                  <span className="jam-key-hint">{HINT_FOR_SEMI[k.semi] || ''}</span>
+                </button>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  /* =================================================================
+     THE STUDIO — everything above the send form.
+     ================================================================= */
+  function Studio(props) {
+    const noteSteps = {};
+    props.pattern.notes.forEach((n) => { noteSteps[n.step] = true; });
+
+    return (
+      <section style={{ padding: '0 0 var(--section-y)' }}>
+        <div className="nm-container">
+          <SectionHeading kicker="Step One" title="The Audition" />
+          <p style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-body)',
+                      color: 'var(--bone-300)', margin: '18px 0 26px', maxWidth: 640, lineHeight: 1.55 }}>
+            One bar, sixteen steps. Build a beat, play something over the top of it, and make it
+            count — this is the part where creativity is formally assessed. There is no wrong
+            answer. There is, however, a boring one.
+          </p>
+          <Card padding="clamp(20px,3vw,36px)">
+            <Transport {...props} />
+
+            <div style={{ marginTop: 'var(--sp-6)' }}>
+              <StepGrid pattern={props.pattern} uiStep={props.uiStep}
+                        onToggle={props.onToggle} onAudition={props.onAudition}
+                        noteSteps={noteSteps} />
+            </div>
+
+            <Keyboard baseMidi={props.baseMidi} down={props.down}
+                      onPress={props.onPress} onRelease={props.onRelease} />
+
+            <div className="jam-octave">
+              <Button size="sm" variant="ghost" onClick={() => props.onOctave(-1)}>◀ Octave</Button>
+              <span style={{ minWidth: 42, textAlign: 'center' }}>{noteLabel(props.baseMidi)}</span>
+              <Button size="sm" variant="ghost" onClick={() => props.onOctave(1)}>Octave ▶</Button>
+              <span style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                Mouse, finger, or type it — your keyboard's bottom two rows are the
+                lower octave, the top two are the upper. Space starts and stops.
+              </span>
+            </div>
+
+            <div className="jam-actions" style={{ marginTop: 'var(--sp-5)' }}>
+              <Button size="sm" variant="ghost" onClick={props.onClearDrums}>Clear Drums</Button>
+              <Button size="sm" variant="ghost" onClick={props.onClearKeys}>Clear Keys</Button>
+              <Button size="sm" variant="ghost" onClick={props.onClearAll}>Start Over</Button>
+              <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-stamp)', fontSize: 11,
+                             letterSpacing: '.12em', textTransform: 'uppercase',
+                             color: 'var(--bone-400)', alignSelf: 'center' }}>
+                {props.pattern.notes.length} note{props.pattern.notes.length === 1 ? '' : 's'} recorded
+              </span>
+            </div>
+          </Card>
+        </div>
+      </section>
+    );
+  }
+
+  /* =================================================================
+     SEND IT TO THE BAND
+     ================================================================= */
+  const INSTRUMENTS = [
+    { value: 'keys', label: 'Keys' },
+    { value: 'guitar', label: 'Guitar' },
+    { value: 'bass', label: 'Bass' },
+    { value: 'drums', label: 'Drums' },
+    { value: 'vocals', label: 'Vocals' },
+    { value: 'other', label: 'Other — will explain in the cover letter' },
+    { value: 'jamming', label: 'Not applying, just jamming' }
+  ];
+
+  function SendPanel({ pattern, loopCode, loopLink, onDownload }) {
+    const [name, setName] = React.useState('');
+    const [email, setEmail] = React.useState('');
+    const [instrument, setInstrument] = React.useState('keys');
+    const [message, setMessage] = React.useState('');
+    const [status, setStatus] = React.useState(null);
+    const [sending, setSending] = React.useState(false);
+    const [sent, setSent] = React.useState(false);
+    const [copied, setCopied] = React.useState(false);
+    const botRef = React.useRef(null);
+
+    const empty = E.isEmptyPattern(pattern);
+
+    function copyLink() {
+      const done = () => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 2500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(loopLink).then(done, fallbackCopy);
+      } else {
+        fallbackCopy();
+      }
+      function fallbackCopy() {
+        // Older browsers, and any page not served over https.
+        const ta = document.createElement('textarea');
+        ta.value = loopLink;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) {
+          setStatus({ tone: 'warn', text: 'Copying is blocked here — select the code below and copy it by hand.' });
+        }
+        document.body.removeChild(ta);
+      }
+    }
+
+    function submit(e) {
+      e.preventDefault();
+      setStatus(null);
+
+      if (botRef.current && botRef.current.checked) return;   // a bot filled the honeypot
+
+      if (empty) {
+        setStatus({
+          tone: 'warn',
+          text: "Your application is blank. We admire the confidence, but program a beat or play a few notes first — the audition is the whole interview here."
+        });
+        return;
+      }
+      if (!FORM_READY) {
+        setStatus({
+          tone: 'warn',
+          text: "Applications aren't open yet — the band still has to paste their form key into this page, so nothing would actually reach them. Your loop is safe though: download the .mid or copy the link below and send it over however you like."
+        });
+        return;
+      }
+
+      setSending(true);
+      fetch('https://api.web3forms.com/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          access_key: CONFIG.accessKey,
+          subject: CONFIG.subject || 'New jam loop from the website',
+          from_name: 'Big Daddy Jam Page',
+          name: name,
+          email: email,
+          // These names are what you'll see as the labels in the email,
+          // so they're written the way you'd want to read them.
+          position_applying_for: (INSTRUMENTS.find((i) => i.value === instrument) || {}).label || instrument,
+          cover_letter: message || '(none supplied)',
+          tempo: pattern.bpm + ' BPM',
+          voice: (E.VOICES.find((v) => v.id === pattern.voice) || {}).label || pattern.voice,
+          listen_to_the_loop: loopLink,
+          loop_code: loopCode
+        })
+      })
+        .then((res) => res.json().catch(() => ({ success: res.ok })))
+        .then((data) => {
+          setSending(false);
+          if (data && data.success) {
+            setSent(true);
+            setStatus({ tone: 'ok', text: "Submitted. It's in the band's inbox — thanks for playing." });
+          } else {
+            setStatus({
+              tone: 'error',
+              text: 'The mail service turned that away' +
+                    (data && data.message ? ' — ' + data.message : '') +
+                    '. Not your fault, and your loop is safe: grab the .mid or copy the link below.'
+            });
+          }
+        })
+        .catch((err) => {
+          setSending(false);
+          setStatus({
+            tone: 'error',
+            text: "Couldn't reach the mail service (" + (err && err.message ? err.message : 'network error') +
+                  '). Your loop is safe — download the .mid or copy the link below and send it over another way.'
+          });
+        });
+    }
+
+    return (
+      <section id="send" style={{ padding: 'var(--section-y) 0' }}>
+        <div className="nm-container jam-stack"
+             style={{ display: 'grid', gridTemplateColumns: '1fr 1fr',
+                      gap: 'clamp(32px,5vw,80px)', alignItems: 'start' }}>
+          <div>
+            <SectionHeading kicker="Step Two" title={<span>Submit For<br/>Review</span>} />
+            <p style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-lead)',
+                        color: 'var(--bone-300)', marginTop: 22, maxWidth: 460, lineHeight: 1.5 }}>
+              Your application travels as a link. We click it, your exact loop opens and plays on
+              this same page, and we can pull the MIDI straight into a session. Every one gets
+              listened to by an actual human being in an actual backwards cap.
+            </p>
+            <p style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-sm)',
+                        color: 'var(--bone-400)', marginTop: 14, maxWidth: 460, lineHeight: 1.55 }}>
+              Candidates are considered for one-off jams and paying gigs alike, so say which
+              you're after. We are not currently able to relocate anyone, but we have been known
+              to swing by and pick people up.
+            </p>
+
+            <div className="jam-actions" style={{ marginTop: 28 }}>
+              <Button variant="outline" size="md" onClick={onDownload} disabled={empty}>
+                Download .mid
+              </Button>
+              <Button variant="ghost" size="md" onClick={copyLink} disabled={empty}>
+                {copied ? 'Link copied!' : 'Copy loop link'}
+              </Button>
+            </div>
+
+            {!empty && (
+              <div style={{ marginTop: 20 }}>
+                <div style={{ fontFamily: 'var(--font-stamp)', fontSize: 10, letterSpacing: '.14em',
+                              textTransform: 'uppercase', color: 'var(--bone-400)', marginBottom: 8 }}>
+                  Your submission code
+                </div>
+                <div className="jam-code-box">{loopCode}</div>
+              </div>
+            )}
+          </div>
+
+          <Card padding="clamp(24px,3vw,40px)">
+            {sent ? (
+              <div style={{ textAlign: 'center', padding: '32px 0' }}>
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: 44, color: 'var(--ember-glow)',
+                              textTransform: 'uppercase', lineHeight: 0.9 }}>Application<br/>Received!</div>
+                <p style={{ color: 'var(--bone-300)', marginTop: 16 }}>
+                  It's in the pile, and somebody will listen to the whole thing — which is more
+                  than most companies can say. If it moves us, you'll hear back. Keep it loud.
+                </p>
+                <div className="jam-actions" style={{ marginTop: 24, justifyContent: 'center' }}>
+                  <Button variant="outline" size="sm" onClick={onDownload}>Download your .mid</Button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  <Field label="Applicant Name" placeholder="Jane Shredder" required
+                         value={name} onChange={(e) => setName(e.target.value)} />
+                  <Field label="Email" type="email" placeholder="you@wherever.com" required
+                         value={email} onChange={(e) => setEmail(e.target.value)} />
+                </div>
+                <Field label="Position Applying For" type="select" options={INSTRUMENTS}
+                       value={instrument} onChange={(e) => setInstrument(e.target.value)} />
+                <Field label="Cover Letter" type="textarea" rows={4}
+                       hint="Optional. Nobody has ever been turned down for skipping it."
+                       placeholder="Where you're from, what you're after, and how you'd hold up in a van for nine hours."
+                       value={message} onChange={(e) => setMessage(e.target.value)} />
+
+                {/* Honeypot — invisible to people, irresistible to bots. */}
+                <label className="jam-botcheck" aria-hidden="true">
+                  <input type="checkbox" name="botcheck" ref={botRef} tabIndex={-1} autoComplete="off" />
+                </label>
+
+                <Button variant="primary" size="lg" as="button" type="submit"
+                        disabled={sending} style={{ width: '100%' }}>
+                  {sending ? 'Submitting…' : 'Submit Application'}
+                </Button>
+
+                {!FORM_READY && (
+                  <p style={{ fontFamily: 'var(--font-stamp)', fontSize: 10, letterSpacing: '.1em',
+                              textTransform: 'uppercase', color: 'var(--bone-400)', textAlign: 'center' }}>
+                    Applications aren't open yet
+                  </p>
+                )}
+              </form>
+            )}
+
+            <div aria-live="polite">
+              {status && (
+                <div className="jam-status" data-tone={status.tone} style={{ marginTop: 18 }}>
+                  {status.text}
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
+      </section>
+    );
+  }
+
+  /* =================================================================
+     FOOTER
+     ================================================================= */
+  function JamFooter() {
+    return (
+      <footer className="nm-grain" style={{ position: 'relative', background: 'var(--stage-black)',
+              borderTop: '1px solid var(--border-hairline)', padding: '48px 0 32px' }}>
+        <div className="nm-container" style={{ position: 'relative', zIndex: 2,
+             display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 24,
+             alignItems: 'flex-end' }}>
+          <div>
+            <a href="index.html">
+              <img src="assets/brand/big-daddy-wordmark.svg" alt="Big Daddy and Co."
+                   style={{ height: 36, width: 'auto', display: 'block' }} />
+            </a>
+            <p style={{ fontFamily: 'var(--font-stamp)', fontSize: 11, letterSpacing: '.14em',
+                        color: 'var(--bone-400)', marginTop: 12, textTransform: 'uppercase' }}>
+              Live from the Shred Shed to the world.
+            </p>
+            <p style={{ fontFamily: 'var(--font-body)', fontSize: 12,
+                        color: 'var(--bone-400)', marginTop: 10, maxWidth: 420, lineHeight: 1.5 }}>
+              Big Daddy and Co. is an equal opportunity employer. We do not discriminate on the
+              basis of genre, gear, or tempo. We will gently discriminate on the basis of volume.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}>
+            <Button variant="ghost" size="sm" as="a" href="index.html">Home</Button>
+            <Button variant="ghost" size="sm" as="a" href="index.html#tour">Tour Dates</Button>
+            <Button variant="outline" size="sm" as="a" href="index.html#book">Book Us</Button>
+          </div>
+        </div>
+        <div className="nm-container" style={{ position: 'relative', zIndex: 2, marginTop: 32,
+             paddingTop: 18, borderTop: '1px solid var(--border-hairline)',
+             fontFamily: 'var(--font-stamp)', fontSize: 10, letterSpacing: '.12em',
+             color: 'var(--bone-400)', textTransform: 'uppercase' }}>
+          © 2026 Big Daddy and Co. · All rights reserved
+        </div>
+      </footer>
+    );
+  }
+
+  /* =================================================================
+     THE PAGE — all the state lives here.
+     ================================================================= */
+  function JamPage() {
+    const [loaded, setLoaded] = React.useState(readLoopFromUrl);
+    const [pattern, setPattern] = React.useState(loaded.pattern);
+    const [playing, setPlaying] = React.useState(false);
+    const [recording, setRecording] = React.useState(false);
+    const [metronome, setMetronome] = React.useState(false);
+    const [uiStep, setUiStep] = React.useState(-1);
+    const [baseMidi, setBaseMidi] = React.useState(60);   // middle C
+    const [down, setDown] = React.useState({});
+
+    /* The scheduler runs on a timer, outside React's render cycle. If it
+       read state directly it would capture the values from the render
+       that started it and never see a tempo change, so it reads refs. */
+    const patternRef = React.useRef(pattern);
+    patternRef.current = pattern;
+    const metronomeRef = React.useRef(metronome);
+    metronomeRef.current = metronome;
+    const recordingRef = React.useRef(recording);
+    recordingRef.current = recording;
+    const baseMidiRef = React.useRef(baseMidi);
+    baseMidiRef.current = baseMidi;
+
+    const heldRef = React.useRef({});      // midi -> live note handle
+    const kbdRef = React.useRef({});       // computer key -> the midi it started
+
+    /* --- transport ------------------------------------------------- */
+    const togglePlay = React.useCallback(() => {
+      if (E.isPlaying()) {
+        E.stop();
+        setPlaying(false);
+        setRecording(false);
+      } else {
+        // Called straight from a click, which is what lets audio start.
+        E.start(() => ({
+          pattern: patternRef.current,
+          bpm: patternRef.current.bpm,
+          metronome: metronomeRef.current
+        }));
+        setPlaying(true);
+      }
+    }, []);
+
+    const toggleRecord = React.useCallback(() => {
+      setRecording((r) => {
+        const next = !r;
+        // Arming record with the transport stopped is a dead end, so
+        // start it rolling too.
+        if (next && !E.isPlaying()) {
+          E.start(() => ({
+            pattern: patternRef.current,
+            bpm: patternRef.current.bpm,
+            metronome: metronomeRef.current
+          }));
+          setPlaying(true);
+        }
+        return next;
+      });
+    }, []);
+
+    /* --- playhead --------------------------------------------------
+       Driven off the audio clock, and only calls setState when the step
+       actually changes — sixteen times a bar, not sixty times a second. */
+    React.useEffect(() => {
+      if (!playing) { setUiStep(-1); return undefined; }
+      let raf = 0, alive = true, drawn = -1;
+      const tick = () => {
+        if (!alive) return;
+        const s = E.currentPlayStep();
+        if (s !== drawn) { drawn = s; setUiStep(s); }
+        raf = window.requestAnimationFrame(tick);
+      };
+      raf = window.requestAnimationFrame(tick);
+      return () => { alive = false; window.cancelAnimationFrame(raf); };
+    }, [playing]);
+
+    // Stop the transport if the page goes away mid-loop.
+    React.useEffect(() => () => E.stop(), []);
+
+    /* Following a loop link while this page is already open only changes
+       the part after the # — the browser doesn't reload, so without this
+       the new loop would be silently ignored. */
+    React.useEffect(() => {
+      const onHash = () => {
+        const next = readLoopFromUrl();
+        if (next.source === 'new') return;      // hash cleared, nothing to load
+        setLoaded(next);
+        // A link that won't decode is worth saying so about, but it is
+        // not worth throwing away whatever the visitor already built.
+        if (next.source !== 'link') return;
+        E.stop();
+        setPlaying(false);
+        setRecording(false);
+        setPattern(next.pattern);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+      window.addEventListener('hashchange', onHash);
+      return () => window.removeEventListener('hashchange', onHash);
+    }, []);
+
+    /* --- editing the pattern --------------------------------------- */
+    const toggleCell = React.useCallback((lane, step) => {
+      E.ensureAudio();
+      const turningOn = !patternRef.current.drums[lane][step];
+
+      /* Preview the hit only while the transport is stopped. Once it's
+         rolling, the sequencer is already playing the pattern, and an
+         extra hit fired off-grid the instant you tap a cell muddies
+         what you're trying to listen to. */
+      if (turningOn && !E.isPlaying()) E.playDrum(E.LANES[lane].id);
+
+      setPattern((p) => Object.assign({}, p, {
+        drums: p.drums.map((row, i) =>
+          i === lane ? row.map((on, s) => (s === step ? !on : on)) : row)
+      }));
+    }, []);
+
+    const audition = React.useCallback((laneId) => {
+      E.ensureAudio();
+      E.playDrum(laneId);
+    }, []);
+
+    const addNote = React.useCallback((note) => {
+      setPattern((p) => {
+        if (p.notes.length >= E.MAX_NOTES) return p;
+        // Replace rather than stack when the same pitch is played on the
+        // same step twice, so overdubbing doesn't pile up duplicates.
+        const kept = p.notes.filter((n) => !(n.step === note.step && n.midi === note.midi));
+        return Object.assign({}, p, { notes: kept.concat([note]) });
+      });
+    }, []);
+
+    /* --- playing notes --------------------------------------------- */
+    const pressNote = React.useCallback((midi) => {
+      if (heldRef.current[midi]) return;             // already down
+      const handle = E.noteOn(patternRef.current.voice, midi, 100);
+      heldRef.current[midi] = {
+        handle: handle,
+        step: E.isPlaying() ? E.liveStep() : null,
+        at: E.now()
+      };
+      setDown((d) => Object.assign({}, d, { [midi]: true }));
+    }, []);
+
+    const releaseNote = React.useCallback((midi) => {
+      const held = heldRef.current[midi];
+      if (!held) return;
+      delete heldRef.current[midi];
+      E.noteOff(held.handle);
+      setDown((d) => {
+        const next = Object.assign({}, d);
+        delete next[midi];
+        return next;
+      });
+
+      if (recordingRef.current && held.step !== null) {
+        const stepDur = E.stepDuration(patternRef.current.bpm);
+        const heldFor = Math.max(E.now() - held.at, 0);
+        const len = Math.min(Math.max(Math.round(heldFor / stepDur), 1), STEPS);
+        addNote({ step: held.step, midi: midi, len: len, velocity: 100 });
+      }
+    }, [addNote]);
+
+    /* --- computer keyboard ------------------------------------------
+       Handlers live in refs so the listeners bind once and never go
+       stale. Which midi note a key started is remembered, so changing
+       octave mid-press can't strand a note ringing. */
+    const fns = React.useRef({});
+    fns.current = { togglePlay, pressNote, releaseNote };
+
+    React.useEffect(() => {
+      const inField = (el) => !!el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+
+      const onDown = (e) => {
+        if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+        if (inField(e.target)) return;
+
+        if (e.code === 'Space') { e.preventDefault(); fns.current.togglePlay(); return; }
+        if (e.key === 'ArrowLeft')  { e.preventDefault(); setBaseMidi((m) => Math.max(24, m - 12)); return; }
+        if (e.key === 'ArrowRight') { e.preventDefault(); setBaseMidi((m) => Math.min(84, m + 12)); return; }
+
+        const k = e.key.toLowerCase();
+        if (!(k in KEY_MAP) || kbdRef.current[k] != null) return;
+        e.preventDefault();
+        const midi = baseMidiRef.current + KEY_MAP[k];
+        kbdRef.current[k] = midi;
+        fns.current.pressNote(midi);
+      };
+
+      const onUp = (e) => {
+        const k = e.key.toLowerCase();
+        const midi = kbdRef.current[k];
+        if (midi == null) return;
+        delete kbdRef.current[k];
+        fns.current.releaseNote(midi);
+      };
+
+      // Leaving the window swallows the keyup, which would leave notes
+      // ringing until the engine's own safety net cuts them off.
+      const onBlur = () => {
+        Object.keys(kbdRef.current).forEach((k) => {
+          const midi = kbdRef.current[k];
+          delete kbdRef.current[k];
+          fns.current.releaseNote(midi);
+        });
+      };
+
+      window.addEventListener('keydown', onDown);
+      window.addEventListener('keyup', onUp);
+      window.addEventListener('blur', onBlur);
+      return () => {
+        window.removeEventListener('keydown', onDown);
+        window.removeEventListener('keyup', onUp);
+        window.removeEventListener('blur', onBlur);
+      };
+    }, []);
+
+    /* --- sharing ---------------------------------------------------- */
+    const loopCode = E.encodeLoop(pattern);
+    const base = (CONFIG.siteUrl || 'https://bigdaddyand.co/jam.html').replace(/#.*$/, '');
+    const loopLink = base + '#loop=' + loopCode;
+
+    const download = React.useCallback(() => {
+      E.downloadMidi(patternRef.current, 'big-daddy-jam.mid');
+    }, []);
+
+    /* --- clearing ---------------------------------------------------- */
+    const clearDrums = React.useCallback(() => {
+      setPattern((p) => Object.assign({}, p, {
+        drums: p.drums.map((row) => row.map(() => false))
+      }));
+    }, []);
+    const clearKeys = React.useCallback(() => {
+      setPattern((p) => Object.assign({}, p, { notes: [] }));
+    }, []);
+    const clearAll = React.useCallback(() => {
+      setPattern((p) => Object.assign(E.emptyPattern(), { bpm: p.bpm, voice: p.voice }));
+    }, []);
+
+    return (
+      <React.Fragment>
+        <JamNav />
+        <JamIntro source={loaded.source} />
+        <Studio
+          pattern={pattern}
+          bpm={pattern.bpm}
+          voice={pattern.voice}
+          playing={playing}
+          recording={recording}
+          metronome={metronome}
+          uiStep={uiStep}
+          baseMidi={baseMidi}
+          down={down}
+          onPlay={togglePlay}
+          onRecord={toggleRecord}
+          onMetronome={() => setMetronome((m) => !m)}
+          onBpm={(v) => setPattern((p) => Object.assign({}, p, { bpm: v }))}
+          onVoice={(v) => setPattern((p) => Object.assign({}, p, { voice: v }))}
+          onToggle={toggleCell}
+          onAudition={audition}
+          onPress={pressNote}
+          onRelease={releaseNote}
+          onOctave={(d) => setBaseMidi((m) => Math.min(84, Math.max(24, m + d * 12)))}
+          onClearDrums={clearDrums}
+          onClearKeys={clearKeys}
+          onClearAll={clearAll}
+        />
+        <SendPanel pattern={pattern} loopCode={loopCode} loopLink={loopLink} onDownload={download} />
+        <JamFooter />
+      </React.Fragment>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<JamPage />);
+  </script>
+</body>
+</html>

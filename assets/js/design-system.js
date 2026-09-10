@@ -562,7 +562,14 @@ function Button({
     fontFamily: 'var(--font-heading)',
     fontWeight: 600,
     textTransform: 'uppercase',
-    border: '1px solid transparent',
+    // Longhand, not the `border` shorthand: the outline variant sets
+    // borderColor on its own, and React warns (and can mis-apply the
+    // style) when a shorthand and a longhand for the same property both
+    // change on a re-render — which happens whenever a button switches
+    // variant, e.g. Play turning into Stop.
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'transparent',
     borderRadius: 'var(--r-sm)',
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? 0.45 : 1,
