@@ -44,3 +44,89 @@ body { overflow-x: hidden; }
   @media (max-width: 560px) {
     #video { height: 210px !important; }
   }
+
+  /* ===================================================================
+     THE TOP BAR (assets/js/site-nav.js)
+
+     The desktop link row still hides below 860px via .nm-navlinks above.
+     What's new is that something replaces it: before this, a phone had no
+     navigation at all past the logo, which was survivable at two pages
+     and is not at four.
+     =================================================================== */
+
+  /* Hover used to be set by inline onMouseEnter/onMouseLeave handlers,
+     which meant a keyboard user tabbing through got no feedback at all.
+     In CSS it covers both, for free. */
+  .bd-navlink { color: var(--bone-300); transition: color var(--dur-fast) var(--ease-out); }
+  .bd-navlink:hover,
+  .bd-navlink:focus-visible { color: var(--ember-glow); }
+  .bd-navlink.is-current { color: var(--bone-100); }
+  .bd-navlink.is-current::after {
+    content: ""; display: block; height: 2px; margin-top: 4px;
+    background: var(--ember-500);
+  }
+  .bd-navlink:focus-visible,
+  .bd-navtoggle:focus-visible,
+  .bd-navpanel-link:focus-visible,
+  .bd-navpanel-cta:focus-visible {
+    outline: 2px solid var(--focus-ring); outline-offset: 4px;
+  }
+
+  /* ---- the hamburger ---- */
+  .bd-navtoggle {
+    display: none;                      /* desktop: the link row is enough */
+    background: none; border: 0; padding: 10px; margin: -10px;
+    cursor: pointer; color: var(--bone-200);
+    min-width: 44px; min-height: 44px;  /* a real touch target */
+    align-items: center; justify-content: center;
+  }
+  .bd-navtoggle-bars { display: block; width: 22px; }
+  .bd-navtoggle-bars span {
+    display: block; height: 2px; background: currentColor; border-radius: 2px;
+    transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
+  }
+  .bd-navtoggle-bars span + span { margin-top: 5px; }
+  .bd-navtoggle[aria-expanded="true"] .bd-navtoggle-bars span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+  .bd-navtoggle[aria-expanded="true"] .bd-navtoggle-bars span:nth-child(2) { opacity: 0; }
+  .bd-navtoggle[aria-expanded="true"] .bd-navtoggle-bars span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+  /* ---- the panel ---- */
+  .bd-navpanel {
+    position: fixed; inset: 0; z-index: 60;
+    background: rgba(7, 9, 15, 0.97);
+    backdrop-filter: blur(10px) saturate(1.2);
+    -webkit-backdrop-filter: blur(10px) saturate(1.2);
+    display: flex; align-items: flex-start; justify-content: stretch;
+    padding: 84px clamp(20px, 6vw, 48px) 32px;
+    overflow-y: auto;
+  }
+  .bd-navpanel-inner { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+  .bd-navpanel-link {
+    font-family: var(--font-display); font-size: clamp(30px, 8vw, 46px);
+    line-height: 1.12; text-transform: uppercase; letter-spacing: .02em;
+    color: var(--bone-100); text-decoration: none;
+    padding: 10px 0; border-bottom: 1px solid var(--stage-700);
+  }
+  .bd-navpanel-link:hover,
+  .bd-navpanel-link:focus-visible { color: var(--ember-glow); }
+  .bd-navpanel-link[aria-current="page"] { color: var(--ember-500); }
+  .bd-navpanel-cta {
+    margin-top: 22px; align-self: flex-start;
+    font-family: var(--font-heading); font-size: 15px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .1em; text-decoration: none;
+    padding: 14px 28px; border-radius: var(--r-sm);
+    background: var(--ember-500); color: var(--text-on-ember);
+  }
+  .bd-navpanel-cta:hover { background: var(--ember-glow); }
+
+  @media (max-width: 860px) {
+    .bd-navtoggle { display: inline-flex; }
+    /* The panel carries the CTA, so the bar doesn't need it too. */
+    .bd-navcta { display: none !important; }
+  }
+
+  /* Someone who asked for less motion still gets the panel, just not the
+     bars folding into an X. */
+  @media (prefers-reduced-motion: reduce) {
+    .bd-navtoggle-bars span { transition: none; }
+  }

@@ -84,6 +84,9 @@
   <!-- Reusable design-system components (Button, Card, Poster, AlbumCover, …) -->
   <script src="assets/js/design-system.js"></script>
 
+  <!-- The top bar, shared with every other page. -->
+  <script src="assets/js/site-nav.js"></script>
+
   <!-- ===================================================================
        EDITABLE PAGE CONTENT
        This is where the words on the page live. Edit the text inside the
@@ -98,52 +101,10 @@
 
   const { Wordmark, Button, Stamp, SectionHeading, AwardLaurel } = window.NashSMomDesignSystem_77335a;
 
-  /* Top nav links. Each is a label plus where it goes — a '#name' jumps
-     to a section of this page, anything else is a normal link to another
-     page (that's how "Jam With Us" reaches jam.html). */
-  const NAV_LINKS = [
-    { label: 'Shows',       href: '#shows' },
-    { label: 'The Band',    href: '#theband' },
-    { label: 'Records',     href: '#records' },
-    { label: 'Jam With Us', href: 'jam.html' },
-    { label: 'Book Us',     href: '#book' }
-  ];
-
-  function Nav({ onBook }) {
-    const [solid, setSolid] = React.useState(false);
-    React.useEffect(() => {
-      const el = document.querySelector('[data-scroll]') || window;
-      const target = document.querySelector('[data-scroll]');
-      const onScroll = () => setSolid((target ? target.scrollTop : window.scrollY) > 40);
-      el.addEventListener('scroll', onScroll);
-      return () => el.removeEventListener('scroll', onScroll);
-    }, []);
-    return (
-      <header style={{
-        position: 'sticky', top: 0, zIndex: 50,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '14px clamp(20px,5vw,64px)',
-        background: solid ? 'rgba(7,9,15,0.86)' : 'transparent',
-        backdropFilter: solid ? 'blur(10px) saturate(1.2)' : 'none',
-        borderBottom: solid ? '1px solid var(--border-hairline)' : '1px solid transparent',
-        transition: 'all var(--dur-med) var(--ease-out)',
-      }}>
-        <img src="assets/brand/big-daddy-wordmark.svg" alt="Big Daddy and Co." style={{ height: 34, width: 'auto', display: 'block' }} />
-        <nav style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
-          <div style={{ display: 'flex', gap: 26 }} className="nm-navlinks">
-            {NAV_LINKS.map((l) => (
-              <a key={l.label} href={l.href}
-                 style={{ fontFamily: 'var(--font-heading)', fontWeight: 500, fontSize: 14,
-                          textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--bone-300)' }}
-                 onMouseEnter={(e) => e.target.style.color = 'var(--ember-glow)'}
-                 onMouseLeave={(e) => e.target.style.color = 'var(--bone-300)'}>{l.label}</a>
-            ))}
-          </div>
-          <Button variant="primary" size="sm" onClick={onBook}>Buy Tickets</Button>
-        </nav>
-      </header>
-    );
-  }
+  /* The top bar lives in assets/js/site-nav.js now, so every page shares
+     one copy instead of each carrying its own that drifts. Edit the links
+     there. `onIndex` keeps this page's section links as bare #anchors. */
+  const SiteNav = window.BDNav.Nav;
 
   function Hero({ onTickets }) {
     return (
@@ -770,7 +731,8 @@
         const scrollTo = (id) => { const el = document.getElementById(id); if (el) window.scrollTo({ top: el.offsetTop - 60, behavior: 'smooth' }); };
         return (
           <React.Fragment>
-            <Nav onBook={() => scrollTo('tour')} />
+            <SiteNav onIndex current="shows"
+                     cta={{ label: 'Buy Tickets', onClick: () => scrollTo('tour') }} />
             <Hero onTickets={() => scrollTo('tour')} />
             <AwardsStrip />
             <VideoBanner />
