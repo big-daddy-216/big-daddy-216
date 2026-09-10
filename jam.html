@@ -7,26 +7,31 @@
 
   <!-- =======================================================================
        WHERE THE LOOPS GET SENT
-       This is the only block you need to touch to turn the page on.
 
-       1. Go to  https://web3forms.com  and paste in the band's email
-          address. They email back an "access key" — a long string of
-          letters and numbers. It's free (250 loops a month) and there's
-          no account to create.
-       2. Paste that key below, replacing the placeholder text.
-       3. Save. That's it.
+       Submissions go to Formspree, on the same form the Tevis Engineering
+       Solutions site uses. Two consequences worth remembering:
 
-       Until you do that, the page still works — visitors can play,
-       record and download their loop — but the Submit button tells them
-       plainly that applications aren't open yet, rather than pretending
-       it sent something.
+       • Formspree's free tier allows 50 submissions a month across the
+         WHOLE ACCOUNT, not per form. Loops from this page draw on the
+         same allowance as the TES contact and ticket forms, so a busy
+         month here eats into that.
+       • The TES back-end reads those notification emails and files them
+         as CRM leads. Every submission from this page carries the marker
+         below so it gets skipped instead of becoming a fake lead — see
+         `_Reference/FORM_SUBMISSION_WORKFLOW_README.md` in TES_Back-End.
+         If you change the marker, change it there too.
 
-       The access key is meant to be public (it only ever lets someone
-       send mail TO you), so it is safe sitting here in the page.
+       To point this somewhere else later, swap `formEndpoint` for another
+       Formspree form ("https://formspree.io/f/xxxxxxxx"). The endpoint is
+       public by design — it only ever lets someone send mail TO you.
        ======================================================================== -->
   <script>
     window.BD_JAM = {
-      accessKey: "PASTE-YOUR-WEB3FORMS-ACCESS-KEY-HERE",
+      formEndpoint: "https://formspree.io/f/maqvanal",
+
+      // Stamped on every submission so the TES back-end can tell band
+      // loops apart from real business enquiries and leave them alone.
+      sourceTag: "BIG-DADDY-JAM",
 
       // Where the "listen to this loop" link in your email should point.
       // Kept as a real address rather than read from the browser, so a
@@ -34,7 +39,7 @@
       siteUrl: "https://bigdaddyand.co/jam.html",
 
       // The subject line on the emails you receive.
-      subject: "New application from the Jam With Us page"
+      subject: "Big Daddy jam submission (not a TES lead)"
     };
   </script>
 
@@ -94,7 +99,7 @@
 
   /* Is the Web3Forms key actually filled in? Until it is, the page has
      to say so rather than fake a successful send. */
-  const FORM_READY = !!CONFIG.accessKey && CONFIG.accessKey.indexOf('PASTE-YOUR') === -1;
+  const FORM_READY = !!CONFIG.formEndpoint && /^https:\/\/formspree\.io\/f\/\w+$/.test(CONFIG.formEndpoint);
 
   /* -----------------------------------------------------------------
      COMPUTER-KEYBOARD LAYOUT
@@ -792,42 +797,67 @@
       if (!FORM_READY) {
         setStatus({
           tone: 'warn',
-          text: "Applications aren't open yet — the band still has to paste their form key into this page, so nothing would actually reach them. Your loop is safe though: download the .mid or copy the link below and send it over however you like."
+          text: "Applications aren't open yet — this page hasn't been pointed at a working form, so nothing would actually reach the band. Your loop is safe though: download the .mid or copy the link below and send it over however you like."
         });
         return;
       }
 
+      // A one-line summary of what's on each layer, so the email says
+      // something useful without anyone having to open the link first.
+      const layerSummary = pattern.layers
+        .map((layer, i) => {
+          if (!layer.notes.length) return null;
+          const voice = (E.VOICES.find((v) => v.id === layer.voice) || {}).label || layer.voice;
+          return 'Layer ' + (i + 1) + ': ' + voice + ' (' + layer.notes.length + ' notes)';
+        })
+        .filter(Boolean)
+        .join(', ') || 'drums only';
+
       setSending(true);
-      fetch('https://api.web3forms.com/submit', {
+      fetch(CONFIG.formEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({
-          access_key: CONFIG.accessKey,
-          subject: CONFIG.subject || 'New jam loop from the website',
-          from_name: 'Big Daddy Jam Page',
-          name: name,
-          email: email,
+          // Formspree's own fields all start with an underscore.
+          _subject: CONFIG.subject || 'Big Daddy jam submission',
+          _replyto: email,
+
+          /* The marker the TES back-end looks for so these don't get
+             filed as CRM leads. Keep it in step with the classifier in
+             TES_Back-End. */
+          form_source: CONFIG.sourceTag || 'BIG-DADDY-JAM',
+
           // These names are what you'll see as the labels in the email,
           // so they're written the way you'd want to read them.
+          name: name,
+          email: email,
           position_applying_for: (INSTRUMENTS.find((i) => i.value === instrument) || {}).label || instrument,
           cover_letter: message || '(none supplied)',
           tempo: pattern.bpm + ' BPM',
-          voice: (E.VOICES.find((v) => v.id === pattern.voice) || {}).label || pattern.voice,
+          layers: layerSummary,
           listen_to_the_loop: loopLink,
           loop_code: loopCode
         })
       })
-        .then((res) => res.json().catch(() => ({ success: res.ok })))
-        .then((data) => {
+        /* Formspree answers 200 on success and 4xx with an `errors`
+           array on failure, so the status code is what to trust. */
+        .then((res) => res.json().then(
+          (data) => ({ ok: res.ok, data: data }),
+          () => ({ ok: res.ok, data: null })
+        ))
+        .then((result) => {
           setSending(false);
-          if (data && data.success) {
+          if (result.ok) {
             setSent(true);
             setStatus({ tone: 'ok', text: "Submitted. It's in the band's inbox — thanks for playing." });
           } else {
+            const errs = result.data && result.data.errors;
+            const detail = errs && errs.length
+              ? errs.map((e) => e.message).join(', ')
+              : (result.data && result.data.error) || '';
             setStatus({
               tone: 'error',
-              text: 'The mail service turned that away' +
-                    (data && data.message ? ' — ' + data.message : '') +
+              text: 'The mail service turned that away' + (detail ? ' — ' + detail : '') +
                     '. Not your fault, and your loop is safe: grab the .mid or copy the link below.'
             });
           }
@@ -911,8 +941,11 @@
                        value={message} onChange={(e) => setMessage(e.target.value)} />
 
                 {/* Honeypot — invisible to people, irresistible to bots. */}
+                {/* Formspree's honeypot is named _gotcha. Invisible to
+                    people, irresistible to bots — and a filled one is
+                    dropped here rather than sent. */}
                 <label className="jam-botcheck" aria-hidden="true">
-                  <input type="checkbox" name="botcheck" ref={botRef} tabIndex={-1} autoComplete="off" />
+                  <input type="checkbox" name="_gotcha" ref={botRef} tabIndex={-1} autoComplete="off" />
                 </label>
 
                 <Button variant="primary" size="lg" as="button" type="submit"
