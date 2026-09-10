@@ -1,0 +1,25 @@
+# Cloudflare Pages config for bigdaddyand.co.
+#
+# The site itself is plain static files served from the repo root — there is no
+# build step, and the Pages project's build command must stay EMPTY with the
+# output directory set to "/". Everything below only wires up the handful of
+# Functions in functions/ to their storage.
+
+name = "big-daddy-216"
+compatibility_date = "2026-09-01"
+pages_build_output_dir = "."
+
+# The jam board's index: who posted what, and what it grew out of.
+[[d1_databases]]
+binding = "DB"
+database_name = "bigdaddy"
+database_id = "PASTE-D1-DATABASE-ID-HERE"
+
+# Mic samples, plus the music and video library.
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "bigdaddy-media"
+
+[vars]
+# Where public media is served from. Overridden per-environment if it ever moves.
+MEDIA_BASE_URL = "https://media.bigdaddyand.co"

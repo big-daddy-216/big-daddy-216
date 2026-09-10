@@ -1,0 +1,12 @@
+{
+  "name": "big-daddy-216",
+  "private": true,
+  "type": "module",
+  "description": "bigdaddyand.co. The site is static with a few Cloudflare Pages Functions and has no build step. Wrangler is deliberately NOT a dependency: it cannot run on Windows ARM64 (its workerd runtime has no build for that platform), and it crashes on every command rather than only the local ones. Deploys happen on Cloudflare's builders via the git integration, and the admin tooling below is plain Node against the REST API — the same arrangement as ohio-crash-reporting.",
+  "scripts": {
+    "db:migrate": "node scripts/d1.mjs migrate",
+    "db:status": "node scripts/d1.mjs status",
+    "jams": "node scripts/d1.mjs recent",
+    "secret:hash": "node scripts/hash-passphrase.mjs"
+  }
+}

@@ -1,0 +1,24 @@
+# Copy to .dev.vars (gitignored).
+#
+# ---- the board's own secrets ------------------------------------------
+# In production these live in Pages > Settings > Variables and Secrets,
+# encrypted, set for BOTH Production and Preview.
+#
+#   npm run secret:hash -- "the band word"      prints all four
+
+JAM_PASSPHRASE_HASH=
+SESSION_HMAC_KEY=
+IP_SALT=
+ADMIN_TOKEN=
+
+# ---- for scripts/d1.mjs (migrations and moderation from this machine) --
+# Wrangler can't run on Windows ARM64, so the admin path is the REST API.
+#
+#   CLOUDFLARE_ACCOUNT_ID   dashboard, right-hand column
+#   CLOUDFLARE_API_TOKEN    My Profile > API Tokens > Create Token,
+#                           permission "D1:Edit" and nothing else
+#   D1_DATABASE_ID          the same id that goes in wrangler.toml
+
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_API_TOKEN=
+D1_DATABASE_ID=

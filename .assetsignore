@@ -1,0 +1,21 @@
+# Cloudflare Pages publishes everything in the output directory, and the output
+# directory is the repo root. Without this file the live site would serve the
+# band's editing manual, the database migrations and the Cloudflare config.
+#
+# Note: functions/ is NOT listed. Pages treats it specially — it becomes the
+# API rather than static files — and listing it here would break the routes.
+
+.claude
+.dev.vars
+.dev.vars.example
+.gitignore
+.wrangler
+EDITING.md
+README.md
+SETUP-CLOUDFLARE.md
+migrations
+node_modules
+package.json
+package-lock.json
+scripts
+wrangler.toml

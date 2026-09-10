@@ -1,0 +1,8 @@
+# Local Cloudflare tooling. None of this belongs on the site.
+node_modules/
+.wrangler/
+.dev.vars
+
+# OS noise
+.DS_Store
+Thumbs.db

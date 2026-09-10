@@ -6,6 +6,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8217"],
       "port": 8217
+    },
+    {
+      "name": "bigdaddy-alt",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8219"],
+      "port": 8219
     }
   ]
 }
