@@ -13,7 +13,7 @@ pages_build_output_dir = "."
 [[d1_databases]]
 binding = "DB"
 database_name = "bigdaddy"
-database_id = "PASTE-D1-DATABASE-ID-HERE"
+database_id = "299e27f9-0a1f-423c-bdfc-3ada60647175"
 
 # Mic samples, plus the music and video library.
 [[r2_buckets]]
