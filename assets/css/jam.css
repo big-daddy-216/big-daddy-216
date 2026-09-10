@@ -703,3 +703,179 @@
   .jam-lane-label { transition: none; }
   .jam-cell:hover { transform: none; }
 }
+
+/* ===================================================================
+   THE JAM BOARD
+   The community half of the page: publishing a loop, and the wall of
+   what everyone else made. Same tokens as the rest of the site — this
+   adds no colours of its own.
+   =================================================================== */
+
+.jam-section {
+  max-width: var(--container);
+  margin: 0 auto;
+  padding: var(--section-y) var(--gutter) 0;
+}
+
+/* Visible to a screen reader, not to the eye — used where a <select>
+   is obvious by sight but has no visible label. */
+.jam-sr {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ---- form bits ----
+   The text controls themselves come from Field in design-system.js, which
+   styles them inline; only the layout around them lives here. */
+
+.jam-publish { display: flex; flex-direction: column; gap: var(--sp-4); }
+.jam-publish-actions {
+  display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap;
+  margin-top: var(--sp-2);
+}
+
+/* The sample consent line. It reverses a promise the page used to make,
+   so it is given room and a rule rather than being tucked in with the
+   ordinary checkboxes. */
+.jam-consent {
+  align-items: flex-start;
+  gap: 10px;
+  padding: var(--sp-3);
+  border: 1px solid var(--ember-600);
+  border-radius: var(--r-sm);
+  background: rgba(240, 138, 29, 0.07);
+  line-height: 1.5;
+}
+.jam-consent input { margin-top: 3px; flex: none; }
+.jam-consent strong { color: var(--ember-glow); }
+
+.jam-lede { font-size: var(--fs-lead); color: var(--text-strong); margin: 0 0 var(--sp-3); }
+.jam-fineprint { font-size: var(--fs-sm); color: var(--bone-400); margin: var(--sp-2) 0; }
+.jam-error {
+  margin: 0; padding: 10px 13px;
+  border-left: 3px solid var(--rouge-500);
+  background: rgba(210, 59, 42, 0.1);
+  color: var(--bone-200); font-size: var(--fs-sm);
+}
+.jam-empty { color: var(--text-body); margin: 0; line-height: 1.6; }
+.jam-empty a { color: var(--ember-glow); }
+
+.jam-code {
+  font-family: var(--font-stamp);
+  font-size: var(--fs-sm);
+  word-break: break-all;
+  padding: 10px 13px;
+  background: var(--stage-900);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--r-sm);
+  color: var(--bone-200);
+  margin: 0 0 var(--sp-3);
+}
+
+/* ---- riffing on somebody ---- */
+.jam-remix-banner {
+  max-width: var(--container);
+  margin: var(--sp-5) auto 0;
+  padding: var(--sp-3) var(--gutter);
+  display: flex; flex-wrap: wrap; align-items: center;
+  justify-content: space-between; gap: var(--sp-3);
+  border-top: 1px solid var(--ember-600);
+  border-bottom: 1px solid var(--ember-600);
+  background: rgba(240, 138, 29, 0.08);
+  color: var(--bone-200); font-size: var(--fs-sm);
+}
+.jam-remix-banner strong { color: var(--ember-glow); }
+.jam-remix-actions { display: flex; gap: var(--sp-4); flex-wrap: wrap; }
+.jam-linkbtn {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font-family: var(--font-heading); font-size: var(--fs-sm);
+  text-transform: uppercase; letter-spacing: .08em;
+  color: var(--volt-glow); text-decoration: underline;
+}
+.jam-linkbtn:hover { color: var(--bone-100); }
+.jam-linkbtn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+
+/* ---- controls ---- */
+.jam-board-controls {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4);
+  margin: var(--sp-4) 0 var(--sp-5);
+}
+.jam-chips { display: flex; gap: 6px; }
+.jam-chip {
+  padding: 7px 14px; cursor: pointer;
+  background: var(--stage-800);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--r-pill);
+  color: var(--bone-300);
+  font-family: var(--font-heading); font-size: 13px;
+  text-transform: uppercase; letter-spacing: .08em;
+  transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.jam-chip:hover { color: var(--bone-100); border-color: var(--stage-500); }
+.jam-chip.is-on {
+  color: var(--text-on-ember); background: var(--ember-500); border-color: var(--ember-500);
+}
+.jam-chip:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+
+/* ---- the wall ---- */
+.jam-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--sp-4);
+}
+.jam-card {
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  padding: var(--sp-4);
+  background: var(--surface-card);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--r-md);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.jam-card:hover { border-color: var(--stage-500); }
+.jam-card.is-playing { border-color: var(--ember-500); box-shadow: var(--glow-ember); }
+
+.jam-card-head { display: flex; flex-direction: column; gap: 2px; }
+.jam-card-title {
+  margin: 0; font-family: var(--font-display); font-size: 22px;
+  line-height: 1.15; text-transform: uppercase; letter-spacing: .01em;
+  color: var(--text-strong);
+}
+.jam-card-by { margin: 0; font-family: var(--font-stamp); font-size: var(--fs-xs); color: var(--bone-400); }
+
+/* One <svg> rather than a grid of divs: a 32x7 dot grid as elements
+   would be 224 nodes per card, and two dozen cards would put five
+   thousand nodes on the page purely for decoration. */
+.jam-thumb {
+  width: 100%; height: 52px; display: block;
+  background: var(--stage-900);
+  border-radius: var(--r-sm);
+}
+.jam-thumb-head { transition: none; }
+
+.jam-card-facts {
+  display: flex; flex-wrap: wrap; gap: 6px 14px;
+  margin: 0; padding: 0; list-style: none;
+  font-family: var(--font-stamp); font-size: var(--fs-xs); color: var(--bone-400);
+}
+.jam-card-hassample { color: var(--volt-glow); }
+.jam-card-note {
+  margin: 0; font-size: var(--fs-sm); color: var(--text-body); line-height: 1.5;
+  /* Somebody else's words, so it must not be able to blow the card open. */
+  overflow-wrap: anywhere;
+}
+.jam-card-lineage { margin: 0; font-size: var(--fs-xs); color: var(--bone-400); }
+.jam-card-lineage a { color: var(--volt-glow); }
+.jam-card-actions {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: var(--sp-2);
+}
+.jam-more { display: flex; justify-content: center; margin-top: var(--sp-5); }
+
+@media (max-width: 560px) {
+  .jam-grid { grid-template-columns: 1fr; }
+  .jam-remix-banner { flex-direction: column; align-items: flex-start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jam-card, .jam-chip { transition: none; }
+}

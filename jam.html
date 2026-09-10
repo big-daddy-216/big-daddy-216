@@ -80,6 +80,9 @@
   <!-- The synth itself: sound, MIDI export, loop codes. No interface. -->
   <script src="assets/js/jam-engine.js"></script>
 
+  <!-- The top bar, shared with every other page. -->
+  <script src="assets/js/site-nav.js"></script>
+
   <!-- ===================================================================
        EDITABLE PAGE CONTENT
        The words on this page live in the JSX below. Edit the text inside
@@ -97,8 +100,8 @@
   const STEPS = E.STEPS;
   const ALL_STEPS = Array.from({ length: STEPS }, (_, i) => i);
 
-  /* Is the Web3Forms key actually filled in? Until it is, the page has
-     to say so rather than fake a successful send. */
+  /* Is the Formspree endpoint actually filled in? Until it is, the page
+     has to say so rather than fake a successful send. */
   const FORM_READY = !!CONFIG.formEndpoint && /^https:\/\/formspree\.io\/f\/\w+$/.test(CONFIG.formEndpoint);
 
   /* -----------------------------------------------------------------
@@ -184,52 +187,11 @@
   }
 
   /* =================================================================
-     NAV — links point back to the homepage's sections.
+     NAV — the shared top bar lives in assets/js/site-nav.js, so there is
+     one copy for the whole site instead of a hand-edited one per page.
+     This page only says which link is the current one.
      ================================================================= */
-  function JamNav() {
-    const [solid, setSolid] = React.useState(false);
-    React.useEffect(() => {
-      const onScroll = () => setSolid(window.scrollY > 40);
-      window.addEventListener('scroll', onScroll);
-      return () => window.removeEventListener('scroll', onScroll);
-    }, []);
-
-    const links = [
-      ['Shows', 'index.html#shows'],
-      ['The Band', 'index.html#theband'],
-      ['Records', 'index.html#records'],
-      ['Book Us', 'index.html#book']
-    ];
-
-    return (
-      <header className="jam-header" style={{
-        position: 'sticky', top: 0, zIndex: 50,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '14px clamp(20px,5vw,64px)',
-        background: solid ? 'rgba(7,9,15,0.86)' : 'transparent',
-        backdropFilter: solid ? 'blur(10px) saturate(1.2)' : 'none',
-        borderBottom: solid ? '1px solid var(--border-hairline)' : '1px solid transparent',
-        transition: 'all var(--dur-med) var(--ease-out)'
-      }}>
-        <a href="index.html" aria-label="Big Daddy and Co. — home">
-          <img src="assets/brand/big-daddy-wordmark.svg" alt="Big Daddy and Co."
-               style={{ height: 34, width: 'auto', display: 'block' }} />
-        </a>
-        <nav style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
-          <div style={{ display: 'flex', gap: 26 }} className="nm-navlinks">
-            {links.map(([label, href]) => (
-              <a key={label} href={href}
-                 style={{ fontFamily: 'var(--font-heading)', fontWeight: 500, fontSize: 14,
-                          textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--bone-300)' }}
-                 onMouseEnter={(e) => e.target.style.color = 'var(--ember-glow)'}
-                 onMouseLeave={(e) => e.target.style.color = 'var(--bone-300)'}>{label}</a>
-            ))}
-          </div>
-          <Button variant="outline" size="sm" as="a" href="index.html">Back to the Band</Button>
-        </nav>
-      </header>
-    );
-  }
+  const SiteNav = window.BDNav.Nav;
 
   /* =================================================================
      INTRO — the job posting.
@@ -444,11 +406,12 @@
   /* =================================================================
      SAMPLE PAD — record something with the microphone.
 
-     The mic is only opened when this button is pressed, and the
-     recording never leaves the visitor's machine: it isn't in the loop
-     link and it can't be in the .mid, because a MIDI file stores notes
-     rather than sound. The page says so rather than letting anyone
-     assume otherwise.
+     The mic is only opened when this button is pressed. The recording
+     stays on the visitor's machine unless they publish a jam to the
+     board and tick "include my recording" — it is never in the loop
+     link and can't be in the .mid, because a MIDI file stores notes
+     rather than sound. The page says all of this plainly rather than
+     letting anyone assume either way.
      ================================================================= */
   const MIC_MESSAGES = {
     denied: "Your browser blocked the microphone. If you want to try again, allow mic access for this site in the address bar and hit record.",
@@ -491,8 +454,8 @@
           {state.error
             ? MIC_MESSAGES[state.error] || 'The microphone could not be started.'
             : 'Record up to ' + E.MAX_SAMPLE_SECONDS + ' seconds — a word, a clap, a guitar stab — ' +
-              'and lay it into the grid. It stays on your device: audio can\u2019t travel in the loop ' +
-              'link or the .mid, so it won\u2019t reach the band.'}
+              'and lay it into the grid. It stays on your device unless you publish it to the ' +
+              'board and tick the box to include it. It can never travel in a loop link or a .mid.'}
         </p>
       </div>
     );
@@ -976,6 +939,508 @@
   }
 
   /* =================================================================
+     THE JAM BOARD
+
+     Everything from here to JamFooter is the community half of the page:
+     publishing a loop, browsing what everyone else made, and picking one
+     up to build on.
+
+     The rule that shapes all of it: a published jam is never edited.
+     "Jam on this" loads somebody's loop into the studio and remembers
+     whose it was; publishing then creates a NEW jam pointing back at
+     theirs. There is no path that changes what someone else posted, and
+     the server refuses one even if the page asks.
+     ================================================================= */
+
+  /* The API only exists on the deployed site. Opened from a file:// URL
+     — or on the old host during the migration — the studio still works
+     completely and the board says where to find it, rather than showing
+     a broken grid. */
+  const PUBLISH_READY = location.protocol === 'http:' || location.protocol === 'https:';
+
+  const MINE_KEY = 'bd.jam.mine';        // { <jam id>: <withdrawal token> }
+
+  function readMine() {
+    try { return JSON.parse(localStorage.getItem(MINE_KEY)) || {}; }
+    catch (e) { return {}; }             // private mode, cleared storage, whatever
+  }
+
+  function rememberMine(id, token) {
+    try {
+      const all = readMine();
+      all[id] = token;
+      localStorage.setItem(MINE_KEY, JSON.stringify(all));
+    } catch (e) { /* the success panel still shows the token */ }
+  }
+
+  function forgetMine(id) {
+    try {
+      const all = readMine();
+      delete all[id];
+      localStorage.setItem(MINE_KEY, JSON.stringify(all));
+    } catch (e) {}
+  }
+
+  /* ---- talking to the API ---------------------------------------- */
+
+  async function apiCall(path, options) {
+    const res = await fetch(path, Object.assign({ credentials: 'same-origin' }, options));
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* 500s can arrive empty */ }
+    if (!res.ok) {
+      const err = new Error((data && data.message) || 'That did not work.');
+      err.code = (data && data.error) || 'http_' + res.status;
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  }
+
+  const API = {
+    mayPost: () => apiCall('/api/session'),
+    signIn: (passphrase) => apiCall('/api/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passphrase })
+    }),
+    list: (query) => apiCall('/api/jams?' + new URLSearchParams(query).toString()),
+    get: (id) => apiCall('/api/jams/' + encodeURIComponent(id)),
+    retract: (id, token) => apiCall('/api/jams/' + encodeURIComponent(id) + '/retract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token })
+    }),
+    publish: (meta, blob) => {
+      /* multipart rather than a two-step upload: the sample is ~176 KB,
+         which is nothing against the request limit, and one request means
+         there is no half-published state to clean up. */
+      const form = new FormData();
+      form.set('meta', JSON.stringify(meta));
+      if (blob) form.set('sample', blob, 'sample.wav');
+      return apiCall('/api/jams', { method: 'POST', body: form });
+    }
+  };
+
+  /* ---- small helpers ---------------------------------------------- */
+
+  function timeAgo(ms) {
+    const secs = Math.max(1, Math.round((Date.now() - ms) / 1000));
+    if (secs < 60) return 'just now';
+    const mins = Math.round(secs / 60);
+    if (mins < 60) return mins + (mins === 1 ? ' minute ago' : ' minutes ago');
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return hours + (hours === 1 ? ' hour ago' : ' hours ago');
+    const days = Math.round(hours / 24);
+    if (days < 30) return days + (days === 1 ? ' day ago' : ' days ago');
+    return new Date(ms).toLocaleDateString();
+  }
+
+  const VOICE_LABEL = {};
+  E.VOICES.forEach((v) => { VOICE_LABEL[v.id] = v.label; });
+
+  function byline(author) { return author || 'Anonymous'; }
+
+  /* ---- the pattern thumbnail --------------------------------------
+     One <svg> with one <rect> per hit, not a grid of divs: a 32x7 dot
+     grid as elements would be 224 nodes per card, and two dozen cards
+     would put five thousand nodes on the page for decoration.
+     ----------------------------------------------------------------- */
+  function LoopThumb({ pattern, step }) {
+    if (!pattern) return null;
+    const marks = [];
+
+    for (let lane = 0; lane < E.LANES.length; lane++) {
+      const row = pattern.drums[lane] || [];
+      for (let s = 0; s < STEPS; s++) {
+        if (row[s]) marks.push(<rect key={'d' + lane + '-' + s} x={s} y={lane} width="0.8" height="0.8" rx="0.2" fill="var(--bone-300)" />);
+      }
+    }
+
+    // All four layers collapse onto one row — this is a glance, not a score.
+    const noteRow = new Array(STEPS).fill(false);
+    pattern.layers.forEach((layer) => {
+      layer.notes.forEach((n) => { if (n.step < STEPS) noteRow[n.step] = true; });
+    });
+    noteRow.forEach((on, s) => {
+      if (on) marks.push(<rect key={'n' + s} x={s} y={E.LANES.length} width="0.8" height="0.8" rx="0.2" fill="var(--ember-500)" />);
+    });
+
+    return (
+      <svg className="jam-thumb" viewBox={'0 0 ' + STEPS + ' ' + (E.LANES.length + 1)}
+           preserveAspectRatio="none" aria-hidden="true">
+        {[0, 8, 16, 24].map((s) => (
+          <rect key={'g' + s} x={s} y="0" width="0.06" height={E.LANES.length + 1} fill="var(--stage-600)" />
+        ))}
+        {marks}
+        {step >= 0 && (
+          <rect className="jam-thumb-head" x={step} y="0" width="0.9"
+                height={E.LANES.length + 1} fill="var(--ember-glow)" opacity="0.28" />
+        )}
+      </svg>
+    );
+  }
+
+  /* ---- one jam on the wall ---------------------------------------- */
+
+  function JamCard({ jam, pattern, playing, step, busy, mine, onPlay, onStop, onRemix, onWithdraw, onOpenLineage }) {
+    const voices = (jam.voices || []).map((v) => VOICE_LABEL[v] || v).join(' · ');
+
+    return (
+      <article className={'jam-card' + (playing ? ' is-playing' : '')}>
+        <header className="jam-card-head">
+          <h3 className="jam-card-title">{jam.title}</h3>
+          <p className="jam-card-by">
+            {byline(jam.author)} · {timeAgo(jam.created_at)}
+          </p>
+        </header>
+
+        <LoopThumb pattern={pattern} step={playing ? step : -1} />
+
+        <ul className="jam-card-facts">
+          <li>{jam.bpm} BPM</li>
+          {jam.note_count > 0 && <li>{jam.note_count} {jam.note_count === 1 ? 'note' : 'notes'}</li>}
+          {voices && <li>{voices}</li>}
+          {jam.sample && <li className="jam-card-hassample">has a sample</li>}
+        </ul>
+
+        {jam.note && <p className="jam-card-note">{jam.note}</p>}
+
+        {jam.parent_id && (
+          <p className="jam-card-lineage">
+            Built on{' '}
+            <a href={'?jam=' + jam.parent_id} onClick={(ev) => { ev.preventDefault(); onOpenLineage(jam.parent_id); }}>
+              another jam
+            </a>
+          </p>
+        )}
+        {jam.remix_count > 0 && (
+          <p className="jam-card-lineage">
+            {jam.remix_count} {jam.remix_count === 1 ? 'version grew' : 'versions grew'} from this
+          </p>
+        )}
+
+        <div className="jam-card-actions">
+          <Button size="sm" variant={playing ? 'flag' : 'outline'}
+                  onClick={playing ? onStop : onPlay} disabled={busy}>
+            {busy ? 'Loading…' : playing ? '■ Stop' : '▶ Play'}
+          </Button>
+          <Button size="sm" variant="primary" onClick={onRemix}>Jam on this</Button>
+          {mine && (
+            <Button size="sm" variant="ghost" onClick={onWithdraw}>Withdraw</Button>
+          )}
+        </div>
+      </article>
+    );
+  }
+
+  /* ---- the board -------------------------------------------------- */
+
+  const SORTS = [
+    ['recent', 'Newest'],
+    ['remixed', 'Most built on']
+  ];
+
+  const BPM_BANDS = [
+    ['', 'Any tempo'],
+    ['60-90', 'Slow (60–90)'],
+    ['90-120', 'Mid (90–120)'],
+    ['120-150', 'Quick (120–150)'],
+    ['150-180', 'Fast (150–180)']
+  ];
+
+  function JamBoard({ state, filters, onFilters, onPlay, onStop, onRemix, onWithdraw, onMore, onOpenLineage, playingId, playStep, loadingId, mine }) {
+    if (!PUBLISH_READY) {
+      return (
+        <section className="jam-section" id="board">
+          <SectionHeading kicker="Step Three" title="What Everybody Else Made" />
+          <Card>
+            <p className="jam-empty">
+              The board lives on the real site — open{' '}
+              <a href="https://bigdaddyand.co/jam.html">bigdaddyand.co/jam.html</a>{' '}
+              to hear what everyone has been posting. Everything else on this page
+              works right here.
+            </p>
+          </Card>
+        </section>
+      );
+    }
+
+    return (
+      <section className="jam-section" id="board">
+        <SectionHeading
+          kicker="Step Three"
+          title="What Everybody Else Made"
+          blurb="Play them, then pick one up and make it yours. Nothing here can be edited — building on somebody's loop posts a new one that remembers theirs."
+        />
+
+        <div className="jam-board-controls">
+          <div className="jam-chips" role="group" aria-label="Sort">
+            {SORTS.map(([value, label]) => (
+              <button key={value} type="button"
+                      className={'jam-chip' + (filters.sort === value ? ' is-on' : '')}
+                      aria-pressed={filters.sort === value}
+                      onClick={() => onFilters({ sort: value })}>{label}</button>
+            ))}
+          </div>
+
+          <label className="jam-inline-label">
+            <span className="jam-sr">Tempo</span>
+            <select className="jam-select" value={filters.band}
+                    onChange={(ev) => onFilters({ band: ev.target.value })}>
+              {BPM_BANDS.map(([value, label]) => <option key={label} value={value}>{label}</option>)}
+            </select>
+          </label>
+
+          <label className="jam-inline-label">
+            <span className="jam-sr">Instrument</span>
+            <select className="jam-select" value={filters.voice}
+                    onChange={(ev) => onFilters({ voice: ev.target.value })}>
+              <option value="">Any instrument</option>
+              {E.VOICES.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+            </select>
+          </label>
+
+          <label className="jam-inline-label jam-check">
+            <input type="checkbox" checked={filters.hasSample}
+                   onChange={(ev) => onFilters({ hasSample: ev.target.checked })} />
+            With a recording
+          </label>
+        </div>
+
+        {state.error && (
+          <Card><p className="jam-empty">{state.error}</p></Card>
+        )}
+
+        {!state.error && state.loading && !state.jams.length && (
+          <p className="jam-empty">Fetching the wall…</p>
+        )}
+
+        {!state.error && !state.loading && !state.jams.length && (
+          <Card>
+            <p className="jam-empty">
+              Nothing on the wall yet that matches. Build something upstairs and
+              be the first name on it.
+            </p>
+          </Card>
+        )}
+
+        {!!state.jams.length && (
+          <div className="jam-grid">
+            {state.jams.map((jam) => (
+              <JamCard
+                key={jam.id}
+                jam={jam}
+                pattern={state.patterns[jam.id]}
+                playing={playingId === jam.id}
+                step={playStep}
+                busy={loadingId === jam.id}
+                mine={!!mine[jam.id]}
+                onPlay={() => onPlay(jam)}
+                onStop={onStop}
+                onRemix={() => onRemix(jam)}
+                onWithdraw={() => onWithdraw(jam)}
+                onOpenLineage={onOpenLineage}
+              />
+            ))}
+          </div>
+        )}
+
+        {state.hasMore && (
+          <div className="jam-more">
+            <Button variant="outline" onClick={onMore} disabled={state.loading}>
+              {state.loading ? 'Loading…' : 'Show me more'}
+            </Button>
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  /* ---- riffing on somebody ---------------------------------------- */
+
+  function RemixBanner({ parent, onClear, onHearOriginal }) {
+    if (!parent) return null;
+    return (
+      <div className="jam-remix-banner" role="status">
+        <span>
+          Riffing on <strong>{parent.title}</strong> by {byline(parent.author)}.
+          Publishing makes a new jam — theirs stays exactly as they left it.
+        </span>
+        <span className="jam-remix-actions">
+          <button type="button" className="jam-linkbtn" onClick={onHearOriginal}>Hear the original</button>
+          <button type="button" className="jam-linkbtn" onClick={onClear}>Start fresh instead</button>
+        </span>
+      </div>
+    );
+  }
+
+  /* ---- putting one up --------------------------------------------- */
+
+  function PublishPanel({ pattern, parent, sampleState, mayPost, onPublished, onNeedSignIn }) {
+    const [title, setTitle] = React.useState('');
+    const [author, setAuthor] = React.useState('');
+    const [anon, setAnon] = React.useState(false);
+    const [note, setNote] = React.useState('');
+    const [includeSample, setIncludeSample] = React.useState(true);
+    const [passphrase, setPassphrase] = React.useState('');
+    const [busy, setBusy] = React.useState(false);
+    const [error, setError] = React.useState(null);
+    const [done, setDone] = React.useState(null);
+
+    const hasSample = sampleState.seconds != null;
+    const sampleBytes = hasSample ? (E.sampleInfo('studio') || {}).bytes || 0 : 0;
+
+    if (!PUBLISH_READY) return null;
+
+    async function submit(ev) {
+      ev.preventDefault();
+      setError(null);
+
+      if (E.isEmptyPattern(pattern)) {
+        setError('There is nothing in the loop yet. Put a beat down first.');
+        return;
+      }
+      if (!title.trim()) {
+        setError('Give it a name so people know what they are clicking.');
+        return;
+      }
+
+      setBusy(true);
+      try {
+        if (!mayPost) {
+          if (!passphrase.trim()) {
+            setError('You need the band word to put something on the wall.');
+            setBusy(false);
+            return;
+          }
+          await API.signIn(passphrase.trim());
+          onNeedSignIn(true);
+        }
+
+        const blob = (hasSample && includeSample) ? E.sampleBlob('studio') : null;
+        const result = await API.publish({
+          title: title.trim(),
+          author: anon ? null : (author.trim() || null),
+          note: note.trim() || null,
+          loop: E.encodeLoop(pattern),
+          parent_id: parent ? parent.id : null,
+          sample_seconds: hasSample && includeSample ? sampleState.seconds : null,
+          /* A remix that isn't adding its own recording keeps the one it
+             inherited, so the loop still sounds the way it did. */
+          inherit_sample: !!(parent && parent.hasSample && !(hasSample && includeSample))
+        }, blob);
+
+        rememberMine(result.id, result.delete_token);
+        setDone(result);
+        setTitle(''); setNote('');
+        onPublished(result);
+      } catch (err) {
+        if (err.code === 'bad_passphrase') {
+          setError("That's not the word. Ask whoever sent you the link.");
+        } else if (err.code === 'duplicate') {
+          setError('That exact loop is already up there.');
+        } else {
+          setError(err.message || 'That did not send. Your loop is safe — try again.');
+        }
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    if (done) {
+      return (
+        <section className="jam-section" id="publish">
+          <SectionHeading kicker="Step Two" title="It's On The Wall" />
+          <Card>
+            <p className="jam-lede">Posted. Here's the link to it:</p>
+            <p className="jam-code">{done.url}</p>
+            <p className="jam-fineprint">
+              Keep this if you might want to take it down again — it's the only
+              way, and we can't get it back for you:
+            </p>
+            <p className="jam-code">{done.delete_token}</p>
+            <p className="jam-fineprint">
+              (This browser remembers it too, so a Withdraw button will show up
+              on your own jam.)
+            </p>
+            <Button variant="outline" onClick={() => setDone(null)}>Post another</Button>
+          </Card>
+        </section>
+      );
+    }
+
+    return (
+      <section className="jam-section" id="publish">
+        <SectionHeading
+          kicker="Step Two"
+          title="Put It On The Board"
+          blurb="Once it's up it stays as you left it — that's the point. Anyone can build on it, and what they post is theirs, not a change to yours."
+        />
+
+        <Card>
+          <form onSubmit={submit} className="jam-publish">
+            <Field label="Call it something" required maxLength={80}
+                   placeholder="Porch Stomp"
+                   value={title} onChange={(ev) => setTitle(ev.target.value)} />
+
+            <Field label="Your name" maxLength={40}
+                   placeholder="Who made it" disabled={anon}
+                   value={author} onChange={(ev) => setAuthor(ev.target.value)} />
+
+            <label className="jam-inline-label jam-check">
+              <input type="checkbox" checked={anon} onChange={(ev) => setAnon(ev.target.checked)} />
+              Post it anonymously
+            </label>
+
+            <Field label="Anything to say about it" type="textarea" rows={2} maxLength={500}
+                   hint="Optional."
+                   placeholder="Needs a bass line. Someone please add a bass line."
+                   value={note} onChange={(ev) => setNote(ev.target.value)} />
+
+            {hasSample && (
+              /* This reverses what the sample pad used to promise, so it is
+                 stated in full, right where the decision is made, rather
+                 than assumed from a ticked box. */
+              <label className="jam-inline-label jam-check jam-consent">
+                <input type="checkbox" checked={includeSample}
+                       onChange={(ev) => setIncludeSample(ev.target.checked)} />
+                <span>
+                  Include my {sampleState.seconds}s recording
+                  {sampleBytes ? ' (' + Math.round(sampleBytes / 1024) + ' KB)' : ''}.
+                  <strong> It gets uploaded, and anyone with the link can play it
+                  and build on it.</strong> Leave this unticked and only the notes
+                  and drums go up.
+                </span>
+              </label>
+            )}
+
+            {!mayPost && (
+              <Field label="The band word" required type="password"
+                     autoComplete="current-password"
+                     hint="Typed once — this browser remembers it after that."
+                     placeholder="Ask whoever sent you the link"
+                     value={passphrase} onChange={(ev) => setPassphrase(ev.target.value)} />
+            )}
+
+            {error && <p className="jam-error" role="alert">{error}</p>}
+
+            <div className="jam-publish-actions">
+              <Button type="submit" variant="primary" disabled={busy}>
+                {busy ? 'Putting it up…' : parent ? 'Publish my version' : 'Publish it'}
+              </Button>
+              {parent && (
+                <span className="jam-fineprint">
+                  This will be posted as a new jam built on <strong>{parent.title}</strong>.
+                </span>
+              )}
+            </div>
+          </form>
+        </Card>
+      </section>
+    );
+  }
+
+  /* =================================================================
      FOOTER
      ================================================================= */
   function JamFooter() {
@@ -1042,6 +1507,24 @@
     });
     const [sampleKeyboard, setSampleKeyboard] = React.useState(false);
 
+    /* --- the board -------------------------------------------------
+       `previewId` is the jam whose loop is currently coming out of the
+       speakers. There is one transport and one audio context, so the
+       studio and the board take turns rather than playing over each
+       other; whichever starts stops the other first. */
+    const [board, setBoard] = React.useState({
+      jams: [], patterns: {}, cursor: null, hasMore: false, loading: false, error: null
+    });
+    const [filters, setFilters] = React.useState({ sort: 'recent', band: '', voice: '', hasSample: false });
+    const [remixParent, setRemixParent] = React.useState(null);
+    const [previewId, setPreviewId] = React.useState(null);
+    const [previewLoading, setPreviewLoading] = React.useState(null);
+    const [mayPost, setMayPost] = React.useState(false);
+    const [mine, setMine] = React.useState(() => (PUBLISH_READY ? readMine() : {}));
+    const previewRef = React.useRef(null);
+    const cursorRef = React.useRef(null);
+    cursorRef.current = board.cursor;
+
     /* The scheduler runs on a timer, outside React's render cycle. If it
        read state directly it would capture the values from the render
        that started it and never see a tempo change, so it reads refs. */
@@ -1064,29 +1547,47 @@
     const transportState = React.useCallback(() => ({
       pattern: patternRef.current,
       bpm: patternRef.current.bpm,
-      metronome: metronomeRef.current
+      metronome: metronomeRef.current,
+      sampleSlot: 'studio'
     }), []);
 
+    /* The board plays through the same transport, but reads a different
+       pattern and a different sample slot — so previewing somebody's jam
+       can't sound, or overwrite, the visitor's own recording. */
+    const previewState = React.useCallback(() => {
+      const p = previewRef.current || E.emptyPattern();
+      return { pattern: p, bpm: p.bpm, metronome: false, sampleSlot: 'preview' };
+    }, []);
+
     /* --- transport ------------------------------------------------- */
+    const claimTransport = React.useCallback(() => {
+      E.stop();                       // takes it back from the board if it had it
+      E.useSample('studio');
+      previewRef.current = null;
+      setPreviewId(null);
+    }, []);
+
     const togglePlay = React.useCallback(() => {
-      if (E.isPlaying()) {
+      if (E.isPlaying() && E.transportOwner() === 'studio') {
         E.stop();
         setPlaying(false);
         setRecording(false);
       } else {
         // Called straight from a click, which is what lets audio start.
-        E.start(transportState);
+        claimTransport();
+        E.start(transportState, 'studio');
         setPlaying(true);
       }
-    }, [transportState]);
+    }, [transportState, claimTransport]);
 
     const toggleRecord = React.useCallback(() => {
       setRecording((r) => {
         const next = !r;
         // Arming record with the transport stopped is a dead end, so
         // start it rolling too.
-        if (next && !E.isPlaying()) {
-          E.start(transportState);
+        if (next && (!E.isPlaying() || E.transportOwner() !== 'studio')) {
+          claimTransport();
+          E.start(transportState, 'studio');
           setPlaying(true);
         }
         return next;
@@ -1098,7 +1599,7 @@
        actually changes — thirty-two times a bar pair, not sixty times a
        second. */
     React.useEffect(() => {
-      if (!playing) { setUiStep(-1); return undefined; }
+      if (!playing && !previewId) { setUiStep(-1); return undefined; }
       let raf = 0, alive = true, drawn = -1;
       const tick = () => {
         if (!alive) return;
@@ -1108,7 +1609,7 @@
       };
       raf = window.requestAnimationFrame(tick);
       return () => { alive = false; window.cancelAnimationFrame(raf); };
-    }, [playing]);
+    }, [playing, previewId]);
 
     // Stop the transport if the page goes away mid-loop.
     React.useEffect(() => () => E.stop(), []);
@@ -1154,7 +1655,7 @@
     const toggleSampleCell = React.useCallback((step) => {
       E.ensureAudio();
       const turningOn = !patternRef.current.sample[step];
-      if (turningOn && !E.isPlaying()) E.playSample();
+      if (turningOn && !E.isPlaying()) E.playSample(undefined, null, null, 'studio');
       setPattern((p) => Object.assign({}, p, {
         sample: p.sample.map((on, s) => (s === step ? !on : on))
       }));
@@ -1377,6 +1878,158 @@
 
     React.useEffect(() => stopCountdown, []);
 
+    /* --- the board ------------------------------------------------- */
+
+    const loadBoard = React.useCallback((append) => {
+      if (!PUBLISH_READY) return;
+      setBoard((b) => Object.assign({}, b, { loading: true, error: null }));
+
+      const query = { sort: filters.sort, limit: 24 };
+      if (filters.band) {
+        const parts = filters.band.split('-');
+        query.bpm_min = parts[0];
+        query.bpm_max = parts[1];
+      }
+      if (filters.voice) query.voice = filters.voice;
+      if (filters.hasSample) query.has_sample = '1';
+      if (append && cursorRef.current) query.cursor = cursorRef.current;
+
+      API.list(query).then((data) => {
+        setBoard((b) => {
+          const jams = append ? b.jams.concat(data.jams) : data.jams;
+          const patterns = Object.assign({}, append ? b.patterns : {});
+          // Decoded once here rather than on every render of every card.
+          data.jams.forEach((j) => { patterns[j.id] = E.decodeLoop(j.loop); });
+          return { jams, patterns, cursor: data.cursor, hasMore: data.has_more, loading: false, error: null };
+        });
+      }).catch(() => {
+        setBoard((b) => Object.assign({}, b, {
+          loading: false,
+          error: 'The board could not be reached just now. Everything else on this page still works.'
+        }));
+      });
+    }, [filters]);
+
+    React.useEffect(() => { loadBoard(false); }, [loadBoard]);
+
+    React.useEffect(() => {
+      if (!PUBLISH_READY) return;
+      API.mayPost().then((r) => setMayPost(!!r.may_post)).catch(() => {});
+    }, []);
+
+    const playPreview = React.useCallback((jam) => {
+      const pattern = board.patterns[jam.id] || E.decodeLoop(jam.loop);
+      if (!pattern) return;
+
+      E.ensureAudio();
+      E.stop();
+      setPlaying(false);
+      setRecording(false);
+
+      const begin = () => {
+        previewRef.current = pattern;
+        E.useSample('preview');
+        E.start(previewState, 'board:' + jam.id);
+        setPreviewId(jam.id);
+      };
+
+      if (jam.sample) {
+        setPreviewLoading(jam.id);
+        E.loadSampleFromUrl(jam.sample.url, 'preview')
+          .catch(() => { E.clearSample('preview'); })   // rather play it dry than not at all
+          .then(() => { setPreviewLoading(null); begin(); });
+      } else {
+        E.clearSample('preview');
+        begin();
+      }
+    }, [board.patterns, previewState]);
+
+    const stopPreview = React.useCallback(() => {
+      E.stop();
+      E.useSample('studio');
+      previewRef.current = null;
+      setPreviewId(null);
+    }, []);
+
+    /* Picking somebody's loop up. Their jam is untouched — this only
+       fills the studio and remembers whose it was, so that publishing
+       posts a new jam pointing back at theirs. */
+    const remixFrom = React.useCallback((jam) => {
+      const pattern = board.patterns[jam.id] || E.decodeLoop(jam.loop);
+      if (!pattern) return;
+
+      E.stop();
+      E.useSample('studio');
+      previewRef.current = null;
+      setPreviewId(null);
+      setPlaying(false);
+      setRecording(false);
+      setPattern(pattern);
+      setRemixParent({ id: jam.id, title: jam.title, author: jam.author, hasSample: !!jam.sample });
+
+      /* Borrow their recording only when there is nothing of the
+         visitor's own to lose. If they've recorded something, theirs
+         stays put and the sample is inherited server-side at publish. */
+      if (jam.sample && !E.hasSample('studio')) {
+        E.loadSampleFromUrl(jam.sample.url, 'studio')
+          .then((info) => setSampleState({ seconds: info.seconds, recording: false, error: null, countdown: 0 }))
+          .catch(() => {});
+      }
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, [board.patterns]);
+
+    const openLineage = React.useCallback((id) => {
+      API.get(id).then((data) => {
+        setBoard((b) => {
+          if (b.jams.some((j) => j.id === data.jam.id)) return b;
+          const patterns = Object.assign({}, b.patterns);
+          patterns[data.jam.id] = E.decodeLoop(data.jam.loop);
+          return Object.assign({}, b, { jams: [data.jam].concat(b.jams), patterns });
+        });
+        const el = document.getElementById('board');
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+      }).catch(() => {});
+    }, []);
+
+    const withdrawJam = React.useCallback((jam) => {
+      const token = readMine()[jam.id];
+      if (!token) return;
+      if (!window.confirm('Take "' + jam.title + '" down? Anything other people built on it stays up.')) return;
+      API.retract(jam.id, token).then(() => {
+        forgetMine(jam.id);
+        setMine(readMine());
+        if (previewId === jam.id) stopPreview();
+        setBoard((b) => Object.assign({}, b, { jams: b.jams.filter((j) => j.id !== jam.id) }));
+      }).catch(() => {
+        window.alert('That could not be withdrawn just now. Try again in a moment.');
+      });
+    }, [previewId, stopPreview]);
+
+    const afterPublish = React.useCallback(() => {
+      setMine(readMine());
+      setRemixParent(null);
+      loadBoard(false);
+    }, [loadBoard]);
+
+    /* A ?jam=<id> link opens that jam ready to be built on, the same as
+       tapping "Jam on this". The older #loop=<code> links still work
+       untouched — they're in emails, and they don't need the API. */
+    React.useEffect(() => {
+      if (!PUBLISH_READY) return;
+      const id = new URLSearchParams(window.location.search).get('jam');
+      if (!id) return;
+      API.get(id).then((data) => {
+        const pattern = E.decodeLoop(data.jam.loop);
+        if (!pattern) return;
+        setPattern(pattern);
+        setRemixParent({
+          id: data.jam.id, title: data.jam.title,
+          author: data.jam.author, hasSample: !!data.jam.sample
+        });
+      }).catch(() => {});
+    }, []);
+
     /* --- sharing ---------------------------------------------------- */
     const loopCode = E.encodeLoop(pattern);
     const base = (CONFIG.siteUrl || 'https://bigdaddyand.co/jam.html').replace(/#.*$/, '');
@@ -1398,7 +2051,10 @@
         layers: p.layers.map((layer) => Object.assign({}, layer, { notes: [] }))
       }));
     }, []);
+    /* Starting over means starting over: keeping the parent would post an
+       unrelated loop claiming to be built on somebody's work. */
     const clearAll = React.useCallback(() => {
+      setRemixParent(null);
       setPattern((p) => {
         const fresh = E.emptyPattern();
         fresh.bpm = p.bpm;
@@ -1410,8 +2066,16 @@
 
     return (
       <React.Fragment>
-        <JamNav />
+        <SiteNav current="jam" cta={{ label: 'Back to the Band', href: 'index.html', variant: 'outline' }} />
         <JamIntro source={loaded.source} />
+        <RemixBanner
+          parent={remixParent}
+          onClear={() => setRemixParent(null)}
+          onHearOriginal={() => {
+            const jam = board.jams.filter((j) => j.id === remixParent.id)[0];
+            if (jam) playPreview(jam); else openLineage(remixParent.id);
+          }}
+        />
         <Studio
           pattern={pattern}
           bpm={pattern.bpm}
@@ -1441,7 +2105,7 @@
           onLayerClear={clearLayer}
           onSampleRecord={startSample}
           onSampleStop={stopSample}
-          onSamplePlay={() => { E.ensureAudio(); E.playSample(); }}
+          onSamplePlay={() => { E.ensureAudio(); E.playSample(undefined, null, null, 'studio'); }}
           onSampleClear={clearSample}
           onSampleKeyboard={setSampleKeyboard}
           arrange={{
@@ -1458,6 +2122,29 @@
           onClearDrums={clearDrums}
           onClearKeys={clearKeys}
           onClearAll={clearAll}
+        />
+        <PublishPanel
+          pattern={pattern}
+          parent={remixParent}
+          sampleState={sampleState}
+          mayPost={mayPost}
+          onNeedSignIn={setMayPost}
+          onPublished={afterPublish}
+        />
+        <JamBoard
+          state={board}
+          filters={filters}
+          mine={mine}
+          playingId={previewId}
+          playStep={uiStep}
+          loadingId={previewLoading}
+          onFilters={(patch) => setFilters((f) => Object.assign({}, f, patch))}
+          onPlay={playPreview}
+          onStop={stopPreview}
+          onRemix={remixFrom}
+          onWithdraw={withdrawJam}
+          onOpenLineage={openLineage}
+          onMore={() => loadBoard(true)}
         />
         <SendPanel pattern={pattern} loopCode={loopCode} loopLink={loopLink} onDownload={download} />
         <JamFooter />
