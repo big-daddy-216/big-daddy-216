@@ -7,19 +7,33 @@ bundles, no encoding. This guide says exactly which file to open for each change
 
 ```
 index.html              ← the home page: all the words live here
-jam.html                ← "Join the Company — Jam With Us!" (the synth page)
+jam.html                ← "Join the Company — Jam With Us!" (synth + the board)
+music.html              ← the records, played from the media bucket
+videos.html             ← the clips, played from the media bucket
 assets/
   css/  site.css         ← colors, fonts, type scale (the "design system")
-        enhance.css      ← responsive tweaks + tap-to-enlarge lightbox
+        enhance.css      ← responsive tweaks, lightbox, the top bar + mobile menu
         jam.css          ← styles used only by the jam page
+        media.css        ← styles for the music and video pages
+  data/ catalog.js       ← ★ the song and video list — the file you edit
   fonts/ *.woff2         ← the 4 type families, as real font files
   js/   react…, babel…   ← libraries (don't touch)
         design-system.js ← reusable pieces: buttons, cards, posters, album tiles
+        site-nav.js      ← the top bar, shared by every page
+        catalog.js       ← turns catalog entries into playable addresses
         lightbox.js      ← photo enlarge behavior
         jam-engine.js    ← the synth: sound, MIDI export, loop codes
   photos/ posters/ brand/ ← all images (see assets/README.md)
-  video/  *.mp4          ← the "Chasing Big Daddy" clips + their poster stills
+
+functions/              ← the board's back end (Cloudflare Pages Functions)
+migrations/             ← the database tables
+scripts/d1.mjs          ← migrations + moderation, from your own machine
+wrangler.toml           ← which database and bucket to use
 ```
+
+The words on the pages are still just words in the HTML. `functions/` and
+`migrations/` are the only genuinely new machinery, and they only matter to the
+jam board.
 
 To preview locally: either **double-click `index.html`**, or run a tiny server
 from this folder — `python -m http.server 8217` — and open
@@ -27,8 +41,14 @@ from this folder — `python -m http.server 8217` — and open
 
 The jam page is at `http://localhost:8217/jam.html`. **Preview that one through
 the server rather than by double-clicking it** — browsers apply tighter rules to
-pages opened straight off the disk, and sending a loop won't work from a `file://`
-page in any case, since the mail service won't accept a request from one.
+pages opened straight off the disk, and the microphone won't work at all from a
+`file://` page.
+
+**The board won't work locally**, and it says so rather than looking broken: it
+needs the back end, which only exists on the deployed site. Everything else —
+the studio, the keyboard, the grid, downloading a `.mid` — works fine against
+the little Python server. To try the board itself, push to a branch and use the
+preview address Cloudflare builds for it.
 
 ## Changing text — open `index.html`
 
@@ -90,36 +110,56 @@ What's in it:
   every step by hand.
 - **A microphone sample pad** — see below.
 
-### ⚠️ Switching sending on — the one thing left to do
+### The jam board — where loops go now
 
-Out of the box the page works, but **the Send button can't actually deliver
-anything**, and it says so plainly rather than pretending. To turn it on:
+> **Not switched on yet?** The board needs a one-time Cloudflare setup —
+> see [`SETUP-CLOUDFLARE.md`](SETUP-CLOUDFLARE.md). Until that's done the page
+> works exactly as it always has and the board says it can't be reached.
 
-1. Go to **[web3forms.com](https://web3forms.com)** and enter the band's email
-   address. They'll email back an **access key** — a long string of letters and
-   numbers. It's free (250 loops a month) and there's no account to create.
-2. Open `jam.html`, find `window.BD_JAM` near the top, and paste the key in
-   place of `PASTE-YOUR-WEB3FORMS-ACCESS-KEY-HERE`.
-3. Save. Done.
+Underneath the studio there's a **board**: everyone's published loops, newest
+first. Anyone with the link can listen. Putting something up needs **the band
+word** — one shared passphrase you hand out to whoever you want posting. It's
+typed once and the browser remembers it.
 
-That same block also holds `siteUrl` (where the "listen to this loop" link in
-your email points — leave it as the live address) and `subject` (the subject
-line on the mail you receive).
+The rule that shapes the whole thing: **a published jam is never edited.**
+Tapping *"Jam on this"* loads somebody's loop into the studio and remembers
+whose it was; publishing then posts a *new* jam that points back at theirs.
+Nothing anyone does can change what you put up. That's enforced in the database
+itself, not just in the page, so it stays true even if something goes wrong
+elsewhere.
 
-The access key is *meant* to be public — it only ever lets someone send mail
-**to** you — so it's safe sitting in the page.
+Each poster gets a **withdrawal token** once, at the moment they publish. It's
+the only way to take a jam down, and the browser that posted it keeps a copy so
+a *Withdraw* button shows up on your own cards. Withdrawing hides the jam but
+keeps the row — anything other people built on it stays standing.
 
-### How a loop actually reaches you
+**To take something down yourself**, from this folder:
 
-Free form services won't carry file attachments, so the loop travels as **text**
-instead. Your email contains a link like
-`https://bigdaddyand.co/jam.html#loop=vQFEAP__…`. Click it and the visitor's
-exact loop opens on the page, ready to play, with a **Download .mid** button
-right there. A busy loop is only about 40 characters, and the part after the `#`
-is never sent to any server — it only ever travels in the email.
+```bash
+npm run jams
+```
 
-Visitors can always download their own `.mid` and copy their own link, whether
-or not sending is switched on.
+That lists the most recent jams with their ids. Then:
+
+```bash
+node scripts/d1.mjs hide abc123def456
+```
+
+(`node scripts/d1.mjs unhide <id>` puts it back. The Cloudflare dashboard's D1
+console does the same job if you'd rather click.)
+
+`'hidden'` means the band took it down; `'removed'` means the poster did. The
+page words the two differently. Either way the row stays, so anything other
+people built on it keeps working.
+
+### Sending a loop straight to the band
+
+The old *Submit For Review* form is still there, below the board, for anyone who
+wants to send you something privately rather than post it publicly. It goes
+through Formspree, and **that account's free tier is 50 submissions a month
+across every form you own — including the Tevis Engineering Solutions contact
+forms.** That's exactly why the board doesn't use it: a jam page that gets
+passed around would quietly eat the quota a paying business depends on.
 
 ### Playing it from the computer keyboard
 
@@ -173,11 +213,24 @@ Two things are true of it, and the page says both out loud:
 - **The mic is only ever opened by pressing the record button**, never on page
   load, and the stream is stopped the moment recording ends so the browser's
   recording indicator goes out.
-- **The audio never leaves the visitor's device.** It isn't in the loop link and
-  it can't be in the `.mid` — a MIDI file stores notes, not sound. So a sample
-  is a toy for the person making the loop; it won't reach you. The sample lane
-  is left out of the shared code for the same reason: a row of hits that make no
-  sound would only confuse whoever opened the link.
+- **The audio stays on the visitor's device unless they publish it.** It is
+  never in the loop link and can't be in the `.mid` — a MIDI file stores notes,
+  not sound — so nothing travels by accident. The one way it leaves is a
+  deliberate publish to the board with *"include my recording"* ticked, and the
+  box says in plain words that it gets uploaded and becomes public. Untick it
+  and only the notes and drums go up.
+
+> This used to read "the audio never leaves the visitor's device", which was
+> true before the board existed. If you ever change how samples work, change
+> that sentence in the same commit — a false promise about a microphone is
+> worse than no promise at all. It appears in three places: here,
+> `jam.html` (the sample pad's note), and the comment at the top of the sample
+> section in `assets/js/jam-engine.js`.
+
+**Recordings are converted to WAV before upload.** Browsers record in formats
+they don't all agree on — Chrome and Firefox produce WebM/Opus, which Safari
+cannot play back at all. Without the conversion, a sample recorded on a laptop
+would be silent on every iPhone with nothing to explain why.
 
 If the mic is blocked, missing, or the browser is too old, the pad says which
 of those it was instead of failing quietly. Those messages live in
@@ -210,6 +263,43 @@ One rule if you edit the sound: never fade a volume to exactly `0` with
 
 `assets/css/jam.css` — only this page loads it, so nothing you change there can
 affect the home page. It uses the same named colors and fonts from `site.css`.
+
+## Putting music and videos up
+
+`music.html` and `videos.html` both read from **one file**:
+`assets/data/catalog.js`. You never edit the pages themselves.
+
+The actual audio and video live in the Cloudflare R2 bucket rather than in this
+repository, because git is a bad place to keep hundred-megabyte files.
+
+**To add a song:**
+
+1. Upload the mp3 in the Cloudflare dashboard: **R2 → `bigdaddy-media` →
+   Upload**, into a folder like `music/pretzel-sunday/`.
+2. Open `assets/data/catalog.js` and add a block to `tracks`, copying the
+   commented-out example. `src` is the **key inside the bucket**
+   (`music/pretzel-sunday/track.mp3`), not a full web address — the page adds
+   the address part.
+3. Set `duration_s` to the length in seconds so it shows before the file loads.
+4. Save and push.
+
+Album art can stay in `assets/albums/` and be referenced as
+`assets/albums/whatever.jpg`; anything that doesn't start with `assets/` is
+treated as a bucket key.
+
+**To add a video**, same thing under `videos`, and **always set a `poster`** —
+a still image — or the tile is a black rectangle until somebody presses play.
+
+`sort_order` controls the running order; bigger numbers come first.
+
+## The top bar
+
+Every page shares one nav, in `assets/js/site-nav.js`. Edit the `LINKS` list
+there and all four pages follow. It used to be copied into each page by hand,
+and the copies had already drifted apart.
+
+Below 860px the links collapse into a menu button. (Before this there was no
+mobile navigation at all — the links were simply hidden.)
 
 ## Changing photos
 See [`assets/README.md`](assets/README.md). Short version: drop a new image into
