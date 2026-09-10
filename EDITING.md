@@ -15,6 +15,7 @@ assets/
         design-system.js ← reusable pieces: buttons, cards, posters, album tiles
         lightbox.js      ← photo enlarge behavior
   photos/ posters/ brand/ ← all images (see assets/README.md)
+  video/  *.mp4          ← the "Chasing Big Daddy" clips + their poster stills
 ```
 
 To preview locally: either **double-click `index.html`**, or run a tiny server
@@ -34,6 +35,7 @@ the bottom of `index.html`. Find the bit you want and edit the words in quotes.
 | Awards strip | `const awards = [ … ]` in `AwardsStrip` |
 | "Live & Loud" photo captions | `const shots = [ … ]` in `Highlights` |
 | Albums / discography | `const ALBUMS = [ … ]` |
+| Music-video files & banner wording | `window.BD_VIDEOS = { … }` (top of the file) |
 | Band members (name, nickname, instrument) | `const MEMBERS = [ … ]` |
 | **Tour dates** | `const TOUR = [ … ]` |
 | Booking blurb + form labels | the `Booking` function |
@@ -43,10 +45,23 @@ the bottom of `index.html`. Find the bit you want and edit the words in quotes.
 Find `const TOUR = [` and add a line in the same shape as the others:
 
 ```js
-{ month: 'NOV', day: '01', city: 'Austin, TX', venue: 'Stubbs', status: 'onsale' },
+{ year: 2026, month: 'NOV', day: '01', city: 'Austin, TX', venue: 'Stubbs', status: 'onsale' },
 ```
 
 `status` is one of `'soldout'`, `'lowtix'`, or `'onsale'` (controls the ticket badge).
+
+**Dates take care of themselves.** Every row carries a `year`, and any show whose
+date has passed is drawn automatically as a struck-out "Played" row with no
+tickets link. The section kicker (`SEP – OCT 2026`) and the "N Shows Left" stamp
+are counted from whatever is still upcoming — so the schedule stays current on
+its own. Leave played shows in the list; they read as tour history.
+
+## The music video
+The two clips live in `assets/video/` and are wired up through the **SITE VIDEO
+MAP** (`window.BD_VIDEOS`) at the top of `index.html` — same idea as the photo
+map. The banner loops silently under the awards strip until someone clicks it for
+sound; the short clip in *Live & Loud* opens a full-screen player. Details and
+swap instructions: [`assets/README.md`](assets/README.md).
 
 ## Changing photos
 See [`assets/README.md`](assets/README.md). Short version: drop a new image into

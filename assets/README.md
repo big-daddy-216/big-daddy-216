@@ -1,19 +1,23 @@
-# Site photos
+# Site photos & video
 
-All photos on **bigdaddyand.co** live here as ordinary image files, so they are
-easy to swap without touching the site's code.
+All photos and video on **bigdaddyand.co** live here as ordinary files, so they
+are easy to swap without touching the site's code.
 
 ```
 assets/
 ├── photos/                     ← live / venue shots
 │   ├── arena-keys.jpg          ← Hero background  +  "Sold-out arena" highlight
 │   ├── shred-shed-full.jpg     ← "The Shred Shed · where it started" highlight
-│   └── shred-shed-wide.jpg     ← "Basement floor · stars & stripes" highlight
-└── posters/                    ← band-member posters (portrait)
-    ├── tim-keyboard-commando.jpg   ← Tim Nash (Keys)
-    ├── dylan-bass-legend.jpg       ← Dylan Merriman (Bass)
-    ├── dirty-mike.jpg              ← Dirty Mike (Guitar)
-    └── tyler-on-the-drums.jpg      ← Tyler (Drums)
+│   └── shred-shed-wide.jpg     ← spare — not on the page right now
+├── posters/                    ← band-member posters (portrait)
+│   ├── tim-keyboard-commando.jpg   ← Tim Nash (Keys)
+│   ├── dylan-bass-legend.jpg       ← Dylan Merriman (Bass)
+│   ├── dirty-mike.jpg              ← Dirty Mike (Guitar)
+│   └── tyler-on-the-drums.jpg      ← Tyler (Drums)
+└── video/                       ← the "Chasing Big Daddy" music video
+    ├── chasing-big-daddy-banner.mp4  ← 10s full-width looping banner
+    ├── chasing-big-daddy-teaser.mp4  ← 4s clip in the Live & Loud grid
+    └── *-poster.jpg                  ← the still each clip shows while it loads
 ```
 
 > `arena-keys.jpg` is used in **two** places — the hero background and the tall
@@ -41,7 +45,6 @@ window.BD_IMAGES = {
   heroBackground:      "assets/photos/arena-keys.jpg",
   highlightArena:      "assets/photos/arena-keys.jpg",
   highlightShredShed:  "assets/photos/shred-shed-full.jpg",
-  highlightBasement:   "assets/photos/shred-shed-wide.jpg",
   memberTimNash:       "assets/posters/tim-keyboard-commando.jpg",
   memberDylanMerriman: "assets/posters/dylan-bass-legend.jpg",
   memberDirtyMike:     "assets/posters/dirty-mike.jpg",
@@ -52,6 +55,38 @@ window.BD_IMAGES = {
 > Tyler used to render as a "WANTED — drummer" placeholder. Dropping
 > `tyler-on-the-drums.jpg` into `posters/` and adding the `memberTyler` line
 > above promoted him to a full member — a live example of the workflow below.
+
+## The video (`assets/video/`)
+
+Two clips from the *Chasing Big Daddy* music video, listed in their own
+**`SITE VIDEO MAP`** (`window.BD_VIDEOS`) right below the photo map in
+`index.html`:
+
+```js
+window.BD_VIDEOS = {
+  banner:       "assets/video/chasing-big-daddy-banner.mp4",   // full-width loop
+  bannerPoster: "assets/video/chasing-big-daddy-banner-poster.jpg",
+  teaser:       "assets/video/chasing-big-daddy-teaser.mp4",   // Live & Loud tile
+  teaserPoster: "assets/video/chasing-big-daddy-teaser-poster.jpg",
+  kicker:       "Official Music Video",   // words on the banner
+  title:        "Chasing Big Daddy",
+  teaserCap:    "From the video · Chasing Big Daddy",
+};
+```
+
+- **The banner** sits under the awards strip and loops **silently**. Clicking it
+  (or the "Tap for Sound" button) turns the sound on; scrolling past it turns the
+  sound back off.
+- **The teaser tile** loops silently in the *Live & Loud* grid and opens a
+  full-screen player — with sound and normal video controls — when clicked.
+- Both clips **only download once they scroll into view**, and neither auto-plays
+  for visitors whose system asks for reduced motion. That keeps the banner's file
+  size off the first page load.
+- The `*-poster.jpg` stills are the first frame of each clip; they show while the
+  video loads. If you swap a clip, grab a fresh still or the old one will flash
+  first.
+- Square-ish source video works well: the banner crops to a wide strip from the
+  middle of the frame.
 
 ## Adding a brand-new photo slot
 
@@ -81,6 +116,8 @@ To restyle the header or tour badge, swap the matching SVG in `assets/brand/`
 - **Tap to enlarge:** any photo in *Live & Loud* or *The Band* opens full-size in
   a lightbox (tap/click the backdrop or press Esc to close). Wired in the
   `bd-lightbox` block near the bottom of `index.html`.
+- **Video:** the banner is silent until clicked; the *Live & Loud* clip opens a
+  full-screen player. Both pause when they scroll out of view.
 - **Mobile:** layout scales down (single-column highlights, 2-up posters,
   condensed tour rows, resized hero logo). The rules live in the `bd-enhance`
   `<style>` block in `index.html`.

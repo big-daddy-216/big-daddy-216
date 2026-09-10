@@ -17,7 +17,7 @@
       heroBackground:      "assets/photos/arena-keys.jpg",            // Hero — full-bleed background
       highlightArena:      "assets/photos/arena-keys.jpg",           // Live & Loud — "Sold-out arena" (tall tile)
       highlightShredShed:  "assets/photos/shred-shed-full.jpg",      // Live & Loud — "The Shred Shed"
-      highlightBasement:   "assets/photos/shred-shed-wide.jpg",      // Live & Loud — "Basement floor · stars & stripes"
+      highlightBasement:   "assets/photos/shred-shed-wide.jpg",      // spare — not on the page right now (was a Live & Loud tile)
       memberTimNash:       "assets/posters/tim-keyboard-commando.jpg", // The Band — Tim (Keys)
       memberDylanMerriman: "assets/posters/dylan-bass-legend.jpg",     // The Band — Dylan (Bass)
       memberDirtyMike:     "assets/posters/dirty-mike.jpg",             // The Band — Dirty Mike (Guitar)
@@ -29,6 +29,26 @@
       albumPretzelSunday:     "assets/albums/pretzel-sunday.jpg",            // Pretzel Sunday (2024)
       albumBigKit:            "assets/albums/big-kit.jpg",                   // Big Kit (2025)
       albumArenaSized:        "assets/albums/arena-sized.jpg"                // Arena Sized (2026)
+    };
+
+    /* =====================================================================
+       SITE VIDEO MAP — the two music-video clips (files in assets/video/).
+       • banner  — the 10-second loop that runs full-width under the awards
+                   strip. Silent by default; click it for sound.
+       • teaser  — the short square clip in the "Live & Loud" grid. Click it
+                   to open the full-screen player (with sound).
+       Each has a matching *Poster still, shown before the file loads.
+       ===================================================================== */
+    window.BD_VIDEOS = {
+      banner:       "assets/video/chasing-big-daddy-banner.mp4",
+      bannerPoster: "assets/video/chasing-big-daddy-banner-poster.jpg",
+      teaser:       "assets/video/chasing-big-daddy-teaser.mp4",
+      teaserPoster: "assets/video/chasing-big-daddy-teaser-poster.jpg",
+
+      // Words on the banner (edit freely)
+      kicker:       "Official Music Video",
+      title:        "Chasing Big Daddy",
+      teaserCap:    "From the video · Chasing Big Daddy"
     };
   </script>
   <!-- Brand kit: icons, PWA manifest, social cards -->
@@ -170,11 +190,209 @@
     );
   }
 
+  /* ===================================================================
+     THE VIDEO — "Chasing Big Daddy"
+     Two clips, both listed in the SITE VIDEO MAP at the top of the file:
+       • VideoBanner — full-width 10s loop. Runs silent; click it (or press
+         Enter on the Sound button) to turn the sound on. It mutes itself
+         again once you scroll past it.
+       • ClipTile    — the short square clip that sits in the "Live & Loud"
+         grid. Silent loop; click it for the full-screen player.
+     Both clips only download once they scroll into view, and neither
+     auto-plays for visitors who ask for reduced motion.
+     =================================================================== */
+
+  const bdReducedMotion = () =>
+    !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  /* Loads the file on first sight, plays while visible, pauses + drops the
+     sound once it scrolls away. Returns the ref to hang on the <video>. */
+  function useInViewLoop(src, onMuteAway) {
+    const ref = React.useRef(null);
+    React.useEffect(() => {
+      const el = ref.current;
+      if (!el) return;
+      const reduced = bdReducedMotion();
+      const io = new IntersectionObserver(([entry]) => {
+        if (!entry) return;
+        if (entry.isIntersecting) {
+          if (!el.getAttribute('src')) el.setAttribute('src', src);
+          if (!reduced) { const p = el.play(); if (p && p.catch) p.catch(() => {}); }
+        } else {
+          el.pause();
+          if (!el.muted) { el.muted = true; if (onMuteAway) onMuteAway(); }
+        }
+      }, { threshold: 0.15 });
+      io.observe(el);
+      return () => io.disconnect();
+    }, [src]);
+    return ref;
+  }
+
+  /* Little speaker glyph for the banner's sound button. */
+  function SoundIcon({ on }) {
+    return (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+           style={{ display: 'block', flex: '0 0 auto' }}>
+        <path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor" stroke="none" />
+        {on
+          ? <React.Fragment><path d="M16.5 8.5a5 5 0 0 1 0 7" /><path d="M19 6a8.5 8.5 0 0 1 0 12" /></React.Fragment>
+          : <React.Fragment><path d="M17 9.5l4.5 5" /><path d="M21.5 9.5l-4.5 5" /></React.Fragment>}
+      </svg>
+    );
+  }
+
+  function VideoBanner() {
+    const [sound, setSound] = React.useState(false);
+    const [hover, setHover] = React.useState(false);
+    const ref = useInViewLoop(window.BD_VIDEOS.banner, () => setSound(false));
+
+    const toggleSound = () => {
+      const el = ref.current;
+      if (!el) return;
+      if (!el.getAttribute('src')) el.setAttribute('src', window.BD_VIDEOS.banner);
+      const next = !sound;
+      el.muted = !next;
+      if (next) el.volume = 0.85;
+      const p = el.play(); if (p && p.catch) p.catch(() => {});
+      setSound(next);
+    };
+
+    return (
+      <section id="video" className="nm-grain" onClick={toggleSound}
+               onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+               aria-label={window.BD_VIDEOS.title + ' — official music video'}
+               style={{
+                 position: 'relative', overflow: 'hidden', cursor: 'pointer',
+                 height: 'clamp(230px, 32vw, 420px)', background: 'var(--stage-black)',
+                 borderTop: '1px solid var(--border-hairline)',
+                 borderBottom: '1px solid var(--border-hairline)',
+               }}>
+        <video ref={ref} muted loop playsInline preload="none" tabIndex={-1}
+               poster={window.BD_VIDEOS.bannerPoster} aria-hidden="true"
+               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%',
+                        objectFit: 'cover', objectPosition: 'center 38%',
+                        filter: 'saturate(0.98) brightness(0.76)' }} />
+        {/* scrims: bottom for the type, side fades so the square crop melts into the page */}
+        <div style={{ position: 'absolute', inset: 0, background: 'var(--scrim-bottom)' }} />
+        <div style={{ position: 'absolute', inset: 0, background:
+              'linear-gradient(90deg, rgba(11,14,22,0.9), rgba(11,14,22,0) 20%, rgba(11,14,22,0) 80%, rgba(11,14,22,0.9))' }} />
+        <div style={{ position: 'absolute', inset: 0, background: 'var(--spot-ember)', opacity: 0.45 }} />
+
+        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 3,
+                      display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
+                      gap: 16, flexWrap: 'wrap',
+                      padding: '0 clamp(20px,5vw,64px) clamp(16px,2.2vw,30px)' }}>
+          <div>
+            <div style={{ fontFamily: 'var(--font-stamp)', fontSize: 11, letterSpacing: '.2em',
+                          textTransform: 'uppercase', color: 'var(--ember-glow)' }}>
+              {window.BD_VIDEOS.kicker}
+            </div>
+            <div className="nm-display" style={{ fontSize: 'clamp(26px,4.4vw,58px)', marginTop: 6,
+                                                 textShadow: 'var(--text-glow-ember)' }}>
+              {window.BD_VIDEOS.title}
+            </div>
+          </div>
+          <button type="button" onClick={(e) => { e.stopPropagation(); toggleSound(); }}
+                  aria-pressed={sound}
+                  aria-label={sound ? 'Mute the music video' : 'Play the music video with sound'}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 9, cursor: 'pointer',
+                    padding: '9px 15px', borderRadius: 'var(--r-pill)',
+                    fontFamily: 'var(--font-stamp)', fontSize: 11, letterSpacing: '.16em',
+                    textTransform: 'uppercase', whiteSpace: 'nowrap',
+                    background: 'rgba(7,9,15,0.6)',
+                    WebkitBackdropFilter: 'blur(8px)', backdropFilter: 'blur(8px)',
+                    border: '1px solid ' + (sound ? 'var(--ember-500)' : 'var(--border-strong)'),
+                    color: sound ? 'var(--ember-glow)' : 'var(--bone-100)',
+                    boxShadow: (sound || hover) ? 'var(--glow-ember-hot)' : 'none',
+                    transition: 'all var(--dur-med) var(--ease-out)',
+                  }}>
+            <SoundIcon on={sound} />
+            {sound ? 'Sound On' : 'Tap for Sound'}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  /* Full-screen player for the short clip — sound on, real controls. */
+  function VideoTheater({ src, title, onClose }) {
+    React.useEffect(() => {
+      const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+      document.addEventListener('keydown', onKey);
+      const prev = document.documentElement.style.overflow;
+      document.documentElement.style.overflow = 'hidden';
+      return () => { document.removeEventListener('keydown', onKey); document.documentElement.style.overflow = prev; };
+    }, [onClose]);
+    return ReactDOM.createPortal(
+      <div onClick={onClose} role="dialog" aria-modal="true" aria-label={title}
+           style={{ position: 'fixed', inset: 0, zIndex: 10001, display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', padding: 'clamp(16px,5vw,56px)', background: 'rgba(7,9,15,0.93)',
+                    WebkitBackdropFilter: 'blur(6px)', backdropFilter: 'blur(6px)' }}>
+        <button onClick={onClose} aria-label="Close"
+                style={{ position: 'fixed', top: 12, right: 18, background: 'transparent', border: 'none',
+                         color: 'var(--bone-300)', fontSize: 30, lineHeight: 1, cursor: 'pointer',
+                         fontFamily: 'system-ui, sans-serif', padding: 8, zIndex: 2 }}>✕</button>
+        <video src={src} autoPlay loop controls playsInline onClick={(e) => e.stopPropagation()}
+               style={{ display: 'block', width: 'auto', height: 'auto',
+                        maxWidth: 'min(94vw, 860px)', maxHeight: '84vh',
+                        borderRadius: 'var(--r-md)', border: '1px solid var(--border-hairline)',
+                        boxShadow: '0 30px 90px rgba(0,0,0,0.7)' }} />
+      </div>,
+      document.body
+    );
+  }
+
+  /* A silent looping clip that sits in the photo grid like any other tile. */
+  function ClipTile({ src, poster, cap, pos, onOpen }) {
+    const ref = useInViewLoop(src);
+    const [hover, setHover] = React.useState(false);
+    return (
+      <figure className="nm-grain" role="button" tabIndex={0}
+              onClick={onOpen}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
+              onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+              aria-label={cap + ' — play the video'}
+              style={{
+                position: 'relative', margin: 0, borderRadius: 'var(--r-md)', overflow: 'hidden',
+                cursor: 'pointer',
+                border: '1px solid ' + (hover ? 'var(--ember-600)' : 'var(--border-hairline)'),
+                boxShadow: hover ? 'var(--glow-ember-hot)' : 'var(--shadow-md)',
+                transition: 'border-color var(--dur-med) var(--ease-out), box-shadow var(--dur-med) var(--ease-out)',
+              }}>
+        <video ref={ref} muted loop playsInline preload="none" poster={poster} aria-hidden="true"
+               style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: pos || 'center 40%',
+                        display: 'block', filter: 'saturate(0.98) brightness(0.82)' }} />
+        <div style={{ position: 'absolute', inset: 0, background: 'var(--scrim-bottom)' }} />
+        <span style={{ position: 'absolute', top: 12, right: 12, zIndex: 3,
+                       display: 'inline-flex', alignItems: 'center', gap: 7,
+                       padding: '6px 11px', borderRadius: 'var(--r-pill)',
+                       background: 'rgba(7,9,15,0.6)',
+                       WebkitBackdropFilter: 'blur(8px)', backdropFilter: 'blur(8px)',
+                       border: '1px solid ' + (hover ? 'var(--ember-500)' : 'var(--border-strong)'),
+                       fontFamily: 'var(--font-stamp)', fontSize: 10, letterSpacing: '.16em',
+                       textTransform: 'uppercase', color: hover ? 'var(--ember-glow)' : 'var(--bone-100)',
+                       transition: 'all var(--dur-med) var(--ease-out)' }}>
+          <span style={{ fontSize: 9, lineHeight: 1 }}>▶</span> Watch
+        </span>
+        <figcaption style={{ position: 'absolute', left: 14, bottom: 12, zIndex: 3,
+                             fontFamily: 'var(--font-stamp)', fontSize: 11, letterSpacing: '.1em',
+                             color: 'var(--bone-100)', textTransform: 'uppercase' }}>{cap}</figcaption>
+      </figure>
+    );
+  }
+
   function Highlights() {
+    /* One of these tiles is the short video clip (clip: true) — it loops
+       silently in the grid and opens the full-screen player when clicked. */
+    const [playing, setPlaying] = React.useState(false);
     const shots = [
       { src: window.BD_IMAGES.highlightArena, cap: 'Sold-out arena · 38,000 fans in attendance', tall: true },
       { src: window.BD_IMAGES.highlightShredShed, cap: 'The Shred Shed · where it started', pos: 'center 24%' },
-      { src: window.BD_IMAGES.highlightBasement, cap: 'The Famous Stars and Stripes Show, 2026', pos: 'center 14%' },
+      { clip: true, src: window.BD_VIDEOS.teaser, poster: window.BD_VIDEOS.teaserPoster,
+        cap: window.BD_VIDEOS.teaserCap, pos: 'center 44%' },
     ];
     return (
       <section id="shows" style={{ padding: 'var(--section-y) 0' }}>
@@ -182,7 +400,10 @@
           <SectionHeading kicker="Recent Highlights" title="Live & Loud" />
           <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gridAutoRows: '220px',
                         gap: 16, marginTop: 40 }} className="nm-highlights">
-            {shots.map((s, i) => (
+            {shots.map((s, i) => s.clip ? (
+              <ClipTile key={i} src={s.src} poster={s.poster} cap={s.cap} pos={s.pos}
+                        onOpen={() => setPlaying(true)} />
+            ) : (
               <figure key={i} className="nm-grain" style={{
                 position: 'relative', margin: 0, borderRadius: 'var(--r-md)', overflow: 'hidden',
                 gridRow: s.tall ? 'span 2' : 'span 1', border: '1px solid var(--border-hairline)',
@@ -198,11 +419,13 @@
             ))}
           </div>
         </div>
+        {playing && <VideoTheater src={window.BD_VIDEOS.teaser} title={window.BD_VIDEOS.title}
+                                  onClose={() => setPlaying(false)} />}
       </section>
     );
   }
 
-  Object.assign(window, { Nav, Hero, AwardsStrip, Highlights });
+  Object.assign(window, { Nav, Hero, AwardsStrip, VideoBanner, Highlights });
   </script>
 
   <!-- Sections 2/2: Records · The Band · The Big Tour · Booking · Footer -->
@@ -210,7 +433,7 @@
   /* Big Daddy and Co. — website sections (part 2): Discography, Band, Big Tour, Booking, Footer. */
 
   const { Wordmark: WM, Button: Btn, Stamp: Stmp, SectionHeading: SH, Card: Crd,
-          AlbumCover: Album, MemberPoster: Poster, TourDate: Date, Field: Fld } = window.NashSMomDesignSystem_77335a;
+          AlbumCover: Album, MemberPoster: Poster, TourDate: TourRow, Field: Fld } = window.NashSMomDesignSystem_77335a;
 
   /* Each album: cover art (src, from the SITE PHOTO MAP) + a blurb shown when the
      cover is clicked. Edit the blurb text right here. */
@@ -335,26 +558,69 @@
     );
   }
 
+  /* THE BIG TOUR
+     Every date carries its year, and anything before today is drawn as a
+     struck-out "Played" row automatically — so the schedule stays current
+     on its own. Add new dates in the same shape; `status` is one of
+     'soldout' | 'lowtix' | 'onsale'. */
+  const TOUR_MONTHS = { JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5,
+                        JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11 };
+
+  function hasPlayed(t) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return new Date(t.year, TOUR_MONTHS[t.month], Number(t.day)) < today;
+  }
+
+  /* A date that's already in the books: struck through, dimmed, no tickets. */
+  function PlayedDate({ month, day, city, venue }) {
+    const strike = { textDecoration: 'line-through', textDecorationColor: 'var(--bone-400)' };
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: '84px 1fr auto auto', alignItems: 'center',
+                    gap: 'var(--sp-5)', padding: '18px var(--sp-5)',
+                    borderBottom: '1px solid var(--border-hairline)', opacity: 0.45 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1 }}>
+          <span style={{ fontFamily: 'var(--font-stamp)', fontSize: 12, letterSpacing: '.12em',
+                         color: 'var(--bone-400)', textTransform: 'uppercase', ...strike }}>{month}</span>
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: 40, color: 'var(--bone-300)', ...strike }}>{day}</span>
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 22,
+                        color: 'var(--bone-300)', textTransform: 'uppercase', letterSpacing: '.01em', ...strike }}>{city}</div>
+          <div style={{ fontFamily: 'var(--font-body)', fontSize: 15, color: 'var(--bone-400)', ...strike }}>{venue}</div>
+        </div>
+        <div><Stmp tone="sold" rotate={-2}>Played</Stmp></div>
+        <div><Btn variant="ghost" size="sm" as="button" disabled>Past Show</Btn></div>
+      </div>
+    );
+  }
+
   const TOUR = [
-    { month: 'JUL', day: '06', city: 'Shaker Hts, OH', venue: 'The Shred Shed', status: 'soldout' },
-    { month: 'JUL', day: '13', city: 'Shaker Hts, OH', venue: 'The Shred Shed', status: 'lowtix' },
-    { month: 'JUL', day: '20', city: 'Shaker Hts, OH', venue: 'The Shred Shed', status: 'lowtix' },
-    { month: 'JUL', day: '27', city: 'Shaker Hts, OH', venue: 'The Shred Shed', status: 'lowtix' },
-    { month: 'AUG', day: '08', city: 'New York, NY', venue: 'Madison Square Garden', status: 'soldout' },
-    { month: 'AUG', day: '09', city: 'New York, NY', venue: 'Madison Square Garden', status: 'soldout' },
-    { month: 'AUG', day: '12', city: 'East Rutherford, NJ', venue: 'MetLife Stadium', status: 'lowtix' },
-    { month: 'AUG', day: '23', city: 'Chicago, IL', venue: 'Soldier Field', status: 'onsale' },
-    { month: 'SEP', day: '05', city: 'Nashville, TN', venue: 'Ryman Auditorium', status: 'lowtix' },
-    { month: 'SEP', day: '13', city: 'Morrison, CO', venue: 'Red Rocks Amphitheatre', status: 'soldout' },
-    { month: 'SEP', day: '20', city: 'George, WA', venue: 'The Gorge Amphitheatre', status: 'onsale' },
-    { month: 'SEP', day: '27', city: 'Los Angeles, CA', venue: 'Hollywood Bowl', status: 'onsale' },
-    { month: 'SEP', day: '28', city: 'Los Angeles, CA', venue: 'Four Seasons Landscaping', status: 'soldout' },
-    { month: 'OCT', day: '11', city: 'Inglewood, CA', venue: 'SoFi Stadium', status: 'soldout' },
-    { month: 'OCT', day: '12', city: 'Inglewood, CA', venue: 'SoFi Stadium', status: 'lowtix' },
-    { month: 'OCT', day: '20', city: 'Las Vegas, NV', venue: 'The Sphere', status: 'onsale' },
+    { year: 2026, month: 'JUL', day: '06', city: 'Shaker Hts, OH', venue: 'The Shred Shed', status: 'soldout' },
+    { year: 2026, month: 'JUL', day: '13', city: 'Shaker Hts, OH', venue: 'The Shred Shed', status: 'lowtix' },
+    { year: 2026, month: 'JUL', day: '20', city: 'Shaker Hts, OH', venue: 'The Shred Shed', status: 'lowtix' },
+    { year: 2026, month: 'JUL', day: '27', city: 'Shaker Hts, OH', venue: 'The Shred Shed', status: 'lowtix' },
+    { year: 2026, month: 'AUG', day: '08', city: 'New York, NY', venue: 'Madison Square Garden', status: 'soldout' },
+    { year: 2026, month: 'AUG', day: '09', city: 'New York, NY', venue: 'Madison Square Garden', status: 'soldout' },
+    { year: 2026, month: 'AUG', day: '12', city: 'East Rutherford, NJ', venue: 'MetLife Stadium', status: 'lowtix' },
+    { year: 2026, month: 'AUG', day: '23', city: 'Chicago, IL', venue: 'Soldier Field', status: 'onsale' },
+    { year: 2026, month: 'SEP', day: '05', city: 'Nashville, TN', venue: 'Ryman Auditorium', status: 'lowtix' },
+    { year: 2026, month: 'SEP', day: '13', city: 'Morrison, CO', venue: 'Red Rocks Amphitheatre', status: 'soldout' },
+    { year: 2026, month: 'SEP', day: '20', city: 'George, WA', venue: 'The Gorge Amphitheatre', status: 'onsale' },
+    { year: 2026, month: 'SEP', day: '27', city: 'Los Angeles, CA', venue: 'Hollywood Bowl', status: 'onsale' },
+    { year: 2026, month: 'SEP', day: '28', city: 'Los Angeles, CA', venue: 'Four Seasons Landscaping', status: 'soldout' },
+    { year: 2026, month: 'OCT', day: '11', city: 'Inglewood, CA', venue: 'SoFi Stadium', status: 'soldout' },
+    { year: 2026, month: 'OCT', day: '12', city: 'Inglewood, CA', venue: 'SoFi Stadium', status: 'lowtix' },
+    { year: 2026, month: 'OCT', day: '20', city: 'Las Vegas, NV', venue: 'The Sphere', status: 'onsale' },
   ];
 
   function BigTour({ onTickets }) {
+    const upcoming = TOUR.filter((t) => !hasPlayed(t));
+    const range = upcoming.length
+      ? upcoming[0].month + ' \u2013 ' + upcoming[upcoming.length - 1].month + ' ' + upcoming[0].year
+      : 'That\u2019s a wrap';
+    const count = upcoming.length
+      ? upcoming.length + ' Shows Left \u00b7 All Ages'
+      : 'Tour Wrapped \u00b7 Thank You';
     return (
       <section id="tour" className="nm-grain" style={{
         position: 'relative', padding: 'var(--section-y) 0', background: 'var(--surface-raised)',
@@ -363,11 +629,13 @@
         <div className="nm-container" style={{ position: 'relative', zIndex: 2 }}>
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
                         flexWrap: 'wrap', gap: 16 }}>
-            <SectionHeading kicker="East Coast · Aug – Oct" title="The Big Tour" />
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}><img src="assets/brand/big-daddy-logo-badge.svg" alt="Big Daddy and Co. - Live from the Shred Shed" className="nm-tour-badge" style={{ width: 210, height: 210, display: 'block', filter: 'drop-shadow(0 12px 46px rgba(240,138,29,0.45))' }} /><Stmp tone="ember" rotate={-2} style={{ fontSize: 13 }}>11 Shows · All Ages</Stmp></div>
+            <SectionHeading kicker={range} title="The Big Tour" />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}><img src="assets/brand/big-daddy-logo-badge.svg" alt="Big Daddy and Co. - Live from the Shred Shed" className="nm-tour-badge" style={{ width: 210, height: 210, display: 'block', filter: 'drop-shadow(0 12px 46px rgba(240,138,29,0.45))' }} /><Stmp tone="ember" rotate={-2} style={{ fontSize: 13 }}>{count}</Stmp></div>
           </div>
           <div style={{ marginTop: 40, borderTop: '1px solid var(--border-hairline)' }}>
-            {TOUR.map((t, i) => <Date key={i} {...t} onTickets={onTickets} />)}
+            {TOUR.map((t, i) => hasPlayed(t)
+              ? <PlayedDate key={i} {...t} />
+              : <TourRow key={i} {...t} onTickets={onTickets} />)}
           </div>
           <p style={{ fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--bone-400)', marginTop: 20 }}>
             More dates added weekly — international and Icelandic leg announced this fall. Want us in your city?{' '}
@@ -487,6 +755,7 @@
             <Nav onBook={() => scrollTo('tour')} />
             <Hero onTickets={() => scrollTo('tour')} onBook={() => scrollTo('book')} />
             <AwardsStrip />
+            <VideoBanner />
             <Highlights />
             <Discography />
             <TheBand />

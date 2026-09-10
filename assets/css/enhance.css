@@ -37,3 +37,10 @@ body { overflow-x: hidden; }
     .nm-tour-badge { width: 150px !important; height: 150px !important; }
     #tour [style*="84px 1fr auto auto"] [style*="font-size: 40px"] { font-size: 32px !important; }
   }
+
+  /* ---- music video: the looping banner + the clip tile in Live & Loud ---- */
+  #video { -webkit-tap-highlight-color: transparent; }
+  #shows figure[role="button"]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+  @media (max-width: 560px) {
+    #video { height: 210px !important; }
+  }
