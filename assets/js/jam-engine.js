@@ -53,13 +53,14 @@
   function blankSteps() { return new Array(STEPS).fill(false); }
 
   function emptyLayer(voiceId) {
-    return { voice: voiceId || VOICES[0].id, muted: false, notes: [] };
+    return { voice: voiceId || VOICES[0].id, muted: false, solo: false, notes: [] };
   }
 
   /* A loop is: a tempo, six drum lanes, one lane for a recorded sample,
      and up to four independent keyboard layers each with its own voice.
      The sample lane holds only the *pattern* — the audio itself lives in
-     the engine and never leaves the visitor's machine. */
+     the engine. It stays on this machine unless the visitor
+     deliberately publishes a jam with the sample included. */
   function emptyPattern() {
     var drums = [];
     for (var i = 0; i < LANES.length; i++) drums.push(blankSteps());
@@ -619,20 +620,54 @@
           the record button, and the stream's tracks are stopped the
           moment recording ends, so the browser's "recording" light
           goes out instead of lingering.
-       2. The audio never leaves the machine it was recorded on. It
-          isn't in the loop code, it isn't in the .mid — MIDI carries
-          notes, not sound — and nothing is uploaded anywhere.
+       2. The audio stays on this machine unless the visitor publishes a
+          jam to the board and ticks "include my recording". It is never
+          in the loop code and never in the .mid — MIDI carries notes,
+          not sound — so nothing travels by accident. Uploading is only
+          ever the result of a deliberate publish.
+
+     Samples live in SLOTS rather than in one variable. The studio holds
+     the visitor's own recording under 'studio'; previewing somebody
+     else's jam from the board loads theirs under 'preview'. Without
+     that split, listening to the board would quietly destroy whatever
+     the visitor had just recorded.
      --------------------------------------------------------------- */
 
-  var sampleBuffer = null;
+  var samples = { studio: null, preview: null };
+  var sampleBlobs = { studio: null, preview: null };
+  var activeSampleSlot = 'studio';
   var activeRecording = null;
 
-  function hasSample() { return !!sampleBuffer; }
-  function clearSample() { sampleBuffer = null; }
+  function slotName(slot) { return slot === 'preview' ? 'preview' : 'studio'; }
 
-  function sampleInfo() {
-    return sampleBuffer ? { seconds: Math.round(sampleBuffer.duration * 10) / 10 } : null;
+  function hasSample(slot) { return !!samples[slotName(slot)]; }
+
+  function clearSample(slot) {
+    var k = slotName(slot);
+    samples[k] = null;
+    sampleBlobs[k] = null;
   }
+
+  /* Which slot the sequencer and keyboard should sound. The board sets
+     this to 'preview' while playing somebody else's jam and puts it
+     back afterwards. */
+  function useSample(slot) { activeSampleSlot = slotName(slot); }
+  function activeSample() { return activeSampleSlot; }
+
+  function sampleInfo(slot) {
+    var k = slotName(slot);
+    var buf = samples[k];
+    if (!buf) return null;
+    var blob = sampleBlobs[k];
+    return {
+      seconds: Math.round(buf.duration * 10) / 10,
+      bytes: blob ? blob.size : 0,
+      mime: blob ? blob.type : null
+    };
+  }
+
+  /* The upload payload for a slot, or null if there's nothing to send. */
+  function sampleBlob(slot) { return sampleBlobs[slotName(slot)] || null; }
 
   /* Why the mic can't be used, or null if it can. Checked before
      asking, so the page can explain instead of failing silently. */
@@ -658,6 +693,82 @@
       fr.onload = function () { resolve(fr.result); };
       fr.onerror = function () { reject(new Error('read-failed')); };
       fr.readAsArrayBuffer(blob);
+    });
+  }
+
+  /* ---- getting a recording into a shape every browser can read ----
+
+     MediaRecorder hands back WebM/Opus on Chrome and Firefox, and
+     MP4/AAC on Safari. Safari's decodeAudioData cannot read WebM/Opus
+     at all — so storing the raw blob would mean every sample recorded
+     on a laptop is silent on every iPhone, with no error to explain it.
+
+     So the buffer is re-encoded to 16-bit mono PCM at 22.05 kHz before
+     it goes anywhere. Four seconds is about 176 KB, and there is no
+     browser with Web Audio that can't decode a WAV. */
+
+  var SAMPLE_UPLOAD_RATE = 22050;
+
+  function encodeWav(buffer) {
+    var frames = buffer.length;
+    var data = buffer.getChannelData(0);
+    var total = 44 + frames * 2;
+    var ab = new ArrayBuffer(total);
+    var view = new DataView(ab);
+
+    function ascii(offset, text) {
+      for (var i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
+    }
+
+    ascii(0, 'RIFF');
+    view.setUint32(4, total - 8, true);
+    ascii(8, 'WAVE');
+    ascii(12, 'fmt ');
+    view.setUint32(16, 16, true);           // PCM header length
+    view.setUint16(20, 1, true);            // format: PCM
+    view.setUint16(22, 1, true);            // channels: mono
+    view.setUint32(24, buffer.sampleRate, true);
+    view.setUint32(28, buffer.sampleRate * 2, true);  // byte rate
+    view.setUint16(32, 2, true);            // block align
+    view.setUint16(34, 16, true);           // bits per sample
+    ascii(36, 'data');
+    view.setUint32(40, frames * 2, true);
+
+    var offset = 44;
+    for (var i = 0; i < frames; i++) {
+      var v = data[i];
+      if (v > 1) v = 1; else if (v < -1) v = -1;
+      view.setInt16(offset, v < 0 ? v * 0x8000 : v * 0x7fff, true);
+      offset += 2;
+    }
+    return new Blob([ab], { type: 'audio/wav' });
+  }
+
+  /* Downmix to mono and resample, using an OfflineAudioContext so the
+     browser does the filtering properly rather than us dropping samples
+     and aliasing the result. Falls back to the buffer as recorded. */
+  function toUploadBuffer(buffer) {
+    var Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!Offline) return Promise.resolve(buffer);
+
+    var frames = Math.max(1, Math.ceil(buffer.duration * SAMPLE_UPLOAD_RATE));
+    var off;
+    try {
+      off = new Offline(1, frames, SAMPLE_UPLOAD_RATE);
+    } catch (e) {
+      return Promise.resolve(buffer);
+    }
+
+    var src = off.createBufferSource();
+    src.buffer = buffer;
+    src.connect(off.destination);
+    src.start();
+
+    return new Promise(function (resolve) {
+      // Safari has historically only had the callback form.
+      off.oncomplete = function (e) { resolve(e.renderedBuffer); };
+      var out = off.startRendering();
+      if (out && typeof out.then === 'function') out.then(resolve, function () { resolve(buffer); });
     });
   }
 
@@ -714,8 +825,17 @@
             .then(function (buf) {
               // Callback form, because Safari's promise form is patchy.
               ctx.decodeAudioData(buf, function (audio) {
-                sampleBuffer = trimTo(audio, maxSeconds);
-                resolve(sampleInfo());
+                var trimmed = trimTo(audio, maxSeconds);
+                samples.studio = trimmed;
+                /* Re-encoded now rather than at publish time, so the
+                   panel can show the real size before anyone commits. */
+                toUploadBuffer(trimmed).then(function (ready) {
+                  sampleBlobs.studio = encodeWav(ready);
+                  resolve(sampleInfo('studio'));
+                }, function () {
+                  sampleBlobs.studio = null;
+                  resolve(sampleInfo('studio'));
+                });
               }, function () { reject(new Error('decode-failed')); });
             })
             .catch(function () { reject(new Error('decode-failed')); });
@@ -737,14 +857,45 @@
   function isRecordingSample() { return !!activeRecording; }
   function stopSampleRecording() { if (activeRecording) activeRecording.stop(); }
 
+  /* Pull somebody else's published sample in so their jam sounds the
+     way they made it.
+
+     This needs CORS on the bucket. A cross-origin fetch without it
+     yields an opaque response whose arrayBuffer() is empty, and
+     decodeAudioData then fails with 'decode-failed' — which looks like
+     a codec problem and is really a configuration one. If board samples
+     ever go silent, check the R2 CORS policy first. */
+  function loadSampleFromUrl(url, slot) {
+    var k = slotName(slot);
+    if (!ensureAudio()) return Promise.reject(new Error('unsupported'));
+
+    return fetch(url, { mode: 'cors', credentials: 'omit' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('fetch-failed');
+        return r.arrayBuffer();
+      })
+      .then(function (buf) {
+        return new Promise(function (resolve, reject) {
+          ctx.decodeAudioData(buf, function (audio) {
+            samples[k] = trimTo(audio, MAX_SAMPLE_SECONDS);
+            sampleBlobs[k] = null;      // not ours to re-upload
+            resolve(sampleInfo(k));
+          }, function () { reject(new Error('decode-failed')); });
+        });
+      });
+  }
+
   /* Play the sample. Pass a midi note to pitch it — the keyboard uses
-     this, the grid lane doesn't. */
-  function playSample(when, midi, velocity) {
-    if (!ensureAudio() || !sampleBuffer) return 0;
+     this, the grid lane doesn't. `slot` defaults to whichever slot is
+     currently active, so existing callers are unaffected. */
+  function playSample(when, midi, velocity, slot) {
+    if (!ensureAudio()) return 0;
+    var buffer = samples[slot ? slotName(slot) : activeSampleSlot];
+    if (!buffer) return 0;
     when = Math.max(when || now(), now());
 
     var src = ctx.createBufferSource();
-    src.buffer = sampleBuffer;
+    src.buffer = buffer;
     var rate = (midi == null) ? 1 : Math.pow(2, (midi - 60) / 12);
     src.playbackRate.value = rate;
 
@@ -755,7 +906,7 @@
     src.connect(g);
     g.connect(master);
 
-    var dur = sampleBuffer.duration / rate;
+    var dur = buffer.duration / rate;
     src.start(when);
     // A short fade stops the tail clicking when it's cut off.
     g.gain.setValueAtTime(vel * 0.9, when + Math.max(dur - 0.02, 0.01));
@@ -796,6 +947,7 @@
   var playQueue = [];         // {step, time} for the moving playhead
   var lastHeardStep = -1;     // what's sounding right now, for the display
   var live = null;            // callbacks + latest pattern from the page
+  var owner = null;           // who asked for the transport: 'studio' or 'board:<id>'
 
   /* How far behind the clock the sound actually is. */
   function latency() {
@@ -810,10 +962,11 @@
   /* `getState` is called fresh on every scheduled step, so tempo,
      pattern edits and the metronome toggle all take effect mid-loop
      without restarting the transport. */
-  function start(getState) {
+  function start(getState, who) {
     if (timer) return;
     if (!ensureAudio()) return;
     live = getState;
+    owner = who || 'studio';
     currentStep = 0;
     playQueue.length = 0;
     lastHeardStep = -1;
@@ -827,7 +980,13 @@
     playQueue.length = 0;
     lastHeardStep = -1;
     live = null;
+    owner = null;
   }
+
+  /* There is one transport and one audio context, so the studio and the
+     board take turns rather than playing over each other. This is how
+     each side knows whether the sound currently coming out is its own. */
+  function transportOwner() { return owner; }
 
   function scheduler() {
     if (!live || !ctx) return;
@@ -870,7 +1029,7 @@
       if (p.drums[l] && p.drums[l][step]) playDrum(LANES[l].id, when);
     }
 
-    if (p.sample && p.sample[step]) playSample(when);
+    if (p.sample && p.sample[step]) playSample(when, null, null, state.sampleSlot);
 
     /* Solo wins over mute: if anything is soloed, only soloed layers
        sound. Otherwise everything that isn't muted plays. */
@@ -933,7 +1092,7 @@
 
   var TPQ = 96;                        // ticks per quarter note
   var TICKS_PER_STEP = TPQ / 4;        // 24 ticks per sixteenth
-  var BAR_TICKS = STEPS * TICKS_PER_STEP;  // 384 — exactly one bar
+  var LOOP_TICKS = STEPS * TICKS_PER_STEP;  // 768 — the full two bars
 
   /* Variable-length quantity — MIDI's 7-bits-per-byte integer format.
      n=0 has to produce a single 0x00 byte, and a negative number must
@@ -983,7 +1142,7 @@
     for (var i = 0; i < events.length; i++) {
       if (events[i].tick > last) last = events[i].tick;
     }
-    var endTick = Math.max(BAR_TICKS, last);
+    var endTick = Math.max(LOOP_TICKS, last);
 
     var body = [], prev = 0;
     for (var j = 0; j < events.length; j++) {
@@ -1005,7 +1164,7 @@
   function emitNotes(list, channel, onsets, ev) {
     var byPitch = {};
     onsets.forEach(function (o) {
-      if (o.start >= BAR_TICKS) return;
+      if (o.start >= LOOP_TICKS) return;
       var k = clamp(Math.round(o.note), 0, 127);
       (byPitch[k] = byPitch[k] || []).push({
         note: k, vel: o.vel, start: Math.round(o.start), end: Math.round(o.end)
@@ -1018,8 +1177,8 @@
         var o = arr[i];
         if (i > 0 && arr[i - 1].start === o.start) continue;   // same pitch, same step
         var nextStart = (i + 1 < arr.length) ? arr[i + 1].start : Infinity;
-        var end = Math.min(o.end, nextStart, BAR_TICKS);
-        if (end <= o.start) end = Math.min(o.start + 1, BAR_TICKS);
+        var end = Math.min(o.end, nextStart, LOOP_TICKS);
+        if (end <= o.start) end = Math.min(o.start + 1, LOOP_TICKS);
         if (end <= o.start) continue;
         // A note-on with velocity 0 *is* a note-off to every parser.
         var vel = Math.max(1, clamp(Math.round(o.vel), 1, 127));
@@ -1403,7 +1562,7 @@
       for (var s = 0; s < STEPS; s++) { if (p.drums[l][s]) return false; }
     }
     // A sample arrangement counts as work, even though the audio behind
-    // it never leaves this machine.
+    // it only leaves this machine on a deliberate publish.
     for (var s2 = 0; s2 < STEPS; s2++) { if (p.sample && p.sample[s2]) return false; }
     return true;
   }
@@ -1450,10 +1609,16 @@
     hasSample: hasSample,
     clearSample: clearSample,
     sampleInfo: sampleInfo,
+    sampleBlob: sampleBlob,
+    loadSampleFromUrl: loadSampleFromUrl,
+    useSample: useSample,
+    activeSample: activeSample,
+    encodeWav: encodeWav,
 
     // transport
     start: start,
     stop: stop,
+    transportOwner: transportOwner,
     isPlaying: isPlaying,
     currentPlayStep: currentPlayStep,
     liveStep: liveStep,
