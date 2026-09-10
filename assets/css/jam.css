@@ -90,8 +90,15 @@
   padding-bottom: var(--sp-2);
 }
 
+/* The studio gets the wide container so all 32 steps fit on a large
+   screen without scrolling. Everything else on the page keeps the
+   standard measure, which is what keeps the prose readable. */
+.jam-wide { max-width: var(--container-wide); }
+
+/* Thirty-two steps need real room; below that the whole grid scrolls
+   sideways rather than shrinking the cells past being hittable. */
 .jam-grid {
-  min-width: 560px;
+  min-width: 940px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -99,8 +106,8 @@
 
 .jam-row {
   display: grid;
-  grid-template-columns: 104px repeat(16, minmax(0, 1fr));
-  gap: 4px;
+  grid-template-columns: 116px repeat(32, minmax(0, 1fr));
+  gap: 3px;
   align-items: center;
 }
 
@@ -144,8 +151,10 @@
 
 .jam-cell {
   position: relative;
-  aspect-ratio: 1 / 1;
-  min-height: 30px;
+  /* Not a fixed aspect ratio: with 32 columns, forcing square cells
+     also forces a minimum width, which would make the grid scroll even
+     on screens wide enough to hold it. Height is set directly instead. */
+  height: 30px;
   border: 1px solid var(--border-hairline);
   border-radius: var(--r-sm);
   background: var(--stage-black);
@@ -183,13 +192,206 @@
   box-shadow: var(--glow-volt);
 }
 
-/* A note sits in this column on the keys track. */
+/* The first step of each bar gets a firmer edge, so two bars read as
+   two bars rather than one long undifferentiated run. */
+.jam-cell[data-bar='true'],
+.jam-tick[data-bar='true'] {
+  box-shadow: inset 2px 0 0 var(--ember-600);
+}
+
+/* A note sits in this column on a layer's track. */
 .jam-cell[data-note='true']::after {
   content: '';
   position: absolute;
-  inset: 30% 30%;
+  inset: 28% 28%;
   border-radius: 50%;
   background: var(--volt-glow);
+}
+
+/* Muted layers still show their notes, just quietly. */
+.jam-cell[data-dim='true'][data-note='true']::after {
+  background: var(--stage-500);
+}
+
+/* ---------------------------------------------------------------------
+   LAYERS
+   --------------------------------------------------------------------- */
+
+.jam-layers {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+
+.jam-layer {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--r-md);
+  background: var(--stage-800);
+  padding: 10px 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.jam-layer:hover { border-color: var(--border-strong); }
+
+/* The selected layer is the one the keyboard plays into. */
+.jam-layer[data-selected='true'] {
+  border-color: var(--ember-500);
+  box-shadow: var(--glow-ember);
+}
+
+.jam-layer[data-silent='true'] { opacity: 0.5; }
+
+.jam-layer-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.jam-layer-name {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bone-200);
+}
+
+.jam-layer[data-selected='true'] .jam-layer-name { color: var(--ember-glow); }
+
+.jam-layer-count {
+  font-family: var(--font-stamp);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--bone-400);
+}
+
+.jam-layer-btns { display: flex; gap: 6px; }
+
+.jam-mini {
+  flex: 1;
+  font-family: var(--font-stamp);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bone-400);
+  background: transparent;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--r-sm);
+  padding: 5px 4px;
+  cursor: pointer;
+  min-height: 26px;
+}
+
+.jam-mini:hover { color: var(--bone-100); border-color: var(--border-strong); }
+
+.jam-mini[data-on='true'] {
+  color: var(--text-on-ember);
+  background: var(--ember-500);
+  border-color: var(--ember-500);
+}
+
+/* A compact select that matches the rest of the controls. */
+.jam-select {
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--bone-100);
+  background: var(--stage-black);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  padding: 6px 8px;
+  cursor: pointer;
+  min-height: 32px;
+}
+
+.jam-select option { background: var(--stage-800); }
+
+/* The label cell of a layer row doubles as its select button. */
+.jam-lane-layer { color: var(--volt-glow); }
+.jam-lane-layer[data-selected='true'] {
+  color: var(--ember-glow);
+  border-color: var(--ember-500);
+}
+.jam-lane-sample { color: var(--rouge-500); cursor: default; }
+
+/* ---------------------------------------------------------------------
+   ARRANGE BAR — copy, paste, duplicate
+   --------------------------------------------------------------------- */
+
+.jam-arrange {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-top: var(--sp-4);
+  padding: 12px var(--sp-4);
+  background: var(--stage-800);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--r-md);
+}
+
+.jam-arrange .jam-select { width: auto; min-width: 104px; }
+
+.jam-arrange-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border-hairline);
+}
+
+.jam-arrange-hint {
+  font-family: var(--font-stamp);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bone-400);
+}
+
+.jam-inline-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-stamp);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bone-400);
+}
+
+.jam-check { cursor: pointer; }
+.jam-check input { accent-color: var(--ember-500); width: 16px; height: 16px; }
+
+/* ---------------------------------------------------------------------
+   SAMPLE PAD
+   --------------------------------------------------------------------- */
+
+.jam-sample {
+  margin-top: var(--sp-5);
+  padding: 14px var(--sp-4);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--r-md);
+  background: var(--stage-800);
+}
+
+.jam-sample-main {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.jam-sample-note {
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--bone-400);
+  margin-top: 10px;
+  max-width: 720px;
 }
 
 /* ---------------------------------------------------------------------
@@ -380,7 +582,35 @@
    `!important` because each octave's flex-grow is set inline to keep the
    two proportional (7 white keys against 8) when they're side by side;
    stacked, they should both simply fill the width. */
+/* Once the keyboard splits, everything under it centres up. Left-aligned
+   rows with a caption shoved to the right edge read as ragged on a phone,
+   where they wrap onto their own lines anyway.
+
+   The `!important` flags are there because these captions carry inline
+   `margin-left: auto` / `text-align: right`, which is what pushes them to
+   the far edge on a wide screen. */
 @media (max-width: 820px) {
+  .jam-octave,
+  .jam-actions,
+  .jam-sample-main {
+    justify-content: center;
+    text-align: center;
+  }
+
+  /* Captions take a line of their own rather than clinging to the edge. */
+  .jam-octave > span:last-child,
+  .jam-actions > span:last-child {
+    margin-left: 0 !important;
+    text-align: center !important;
+    flex-basis: 100%;
+  }
+
+  .jam-sample-note {
+    text-align: center;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
   .jam-keyboard {
     height: auto;
     flex-direction: column;
@@ -414,8 +644,13 @@
   }
 }
 
+@media (max-width: 1000px) {
+  .jam-layers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 @media (max-width: 700px) {
-  .jam-row { grid-template-columns: 78px repeat(16, minmax(0, 1fr)); }
+  .jam-layers { grid-template-columns: 1fr; }
+  .jam-row { grid-template-columns: 92px repeat(32, minmax(0, 1fr)); }
   .jam-lane-label {
     font-size: 10px;
     padding: 8px 6px;
@@ -426,8 +661,8 @@
   /* Below this width the grid scrolls sideways rather than squashing
      the cells down to something unhittable. Since it's scrolling
      anyway, the cells may as well stay big enough for a fingertip. */
-  .jam-grid { min-width: 640px; }
-  .jam-cell { min-height: 38px; }
+  .jam-grid { min-width: 1180px; }
+  .jam-cell { height: 34px; }
 }
 
 @media (max-width: 480px) {

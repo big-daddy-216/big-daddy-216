@@ -273,7 +273,8 @@
   }
 
   /* =================================================================
-     TRANSPORT — play, record, metronome, tempo, voice.
+     TRANSPORT — play, record, metronome, tempo.
+     (Voice lives on each layer now, not up here.)
      ================================================================= */
   function Transport(props) {
     return (
@@ -304,29 +305,222 @@
         </div>
 
         <div className="jam-transport-group">
-          <span className="jam-tempo-unit">Voice</span>
-          {E.VOICES.map((v) => (
-            <Button key={v.id} size="sm" variant={props.voice === v.id ? 'primary' : 'ghost'}
-                    aria-pressed={props.voice === v.id}
-                    onClick={() => props.onVoice(v.id)}>{v.label}</Button>
-          ))}
+          <span className="jam-tempo-unit">
+            {props.recording
+              ? 'Recording into ' + props.layerName
+              : 'Playing ' + props.layerName}
+          </span>
         </div>
       </div>
     );
   }
 
   /* =================================================================
-     THE GRID — six drum lanes plus a read-out of the keys track.
+     LAYERS — four independent keyboard tracks.
+
+     The selected layer is the one the keyboard plays and the one new
+     notes record into. Everything else keeps looping while you play,
+     which is the whole point: lay something down, hear it come round,
+     riff over the top of it.
      ================================================================= */
-  function StepGrid({ pattern, uiStep, onToggle, onAudition, noteSteps }) {
+  function LayerStrip({ layers, selected, onSelect, onVoice, onMute, onSolo, onClear }) {
+    const anySolo = layers.some((l) => l.solo);
+    return (
+      <div className="jam-layers">
+        {layers.map((layer, i) => {
+          const silenced = anySolo ? !layer.solo : layer.muted;
+          return (
+            <div key={i}
+                 className="jam-layer"
+                 data-selected={selected === i}
+                 data-silent={silenced}
+                 onClick={() => onSelect(i)}>
+              <div className="jam-layer-head">
+                <span className="jam-layer-name">Layer {i + 1}</span>
+                <span className="jam-layer-count">
+                  {layer.notes.length || '—'}
+                </span>
+              </div>
+
+              <select className="jam-select" value={layer.voice}
+                      aria-label={'Voice for layer ' + (i + 1)}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => onVoice(i, e.target.value)}>
+                {E.VOICES.map((v) => (
+                  <option key={v.id} value={v.id}>{v.label}</option>
+                ))}
+              </select>
+
+              <div className="jam-layer-btns">
+                <button type="button" className="jam-mini" data-on={layer.muted}
+                        aria-pressed={!!layer.muted}
+                        title={'Mute layer ' + (i + 1)}
+                        onClick={(e) => { e.stopPropagation(); onMute(i); }}>Mute</button>
+                <button type="button" className="jam-mini" data-on={layer.solo}
+                        aria-pressed={!!layer.solo}
+                        title={'Solo layer ' + (i + 1)}
+                        onClick={(e) => { e.stopPropagation(); onSolo(i); }}>Solo</button>
+                <button type="button" className="jam-mini"
+                        title={'Clear layer ' + (i + 1)}
+                        onClick={(e) => { e.stopPropagation(); onClear(i); }}>Clear</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  /* =================================================================
+     ARRANGE — copy, paste, and the one-click "make the back half match
+     the front half", which is most of what anyone actually wants.
+     ================================================================= */
+  const BEATS = E.STEPS / E.STEPS_PER_BEAT;          // 8
+
+  const COPY_RANGES = [
+    { label: 'Beats 1–2', from: 0,  len: 8  },
+    { label: 'Beats 3–4', from: 8,  len: 8  },
+    { label: 'Beats 5–6', from: 16, len: 8  },
+    { label: 'Beats 7–8', from: 24, len: 8  },
+    { label: 'Beats 1–4', from: 0,  len: 16 },
+    { label: 'Beats 5–8', from: 16, len: 16 }
+  ];
+
+  const SCOPES = [
+    { value: 'all',   label: 'Everything' },
+    { value: 'drums', label: 'Drums only' },
+    { value: 'keys',  label: 'Keys only' }
+  ];
+
+  function ArrangeBar(props) {
+    return (
+      <div className="jam-arrange">
+        <Button size="sm" variant="outline" onClick={props.onDouble}>Double It</Button>
+        <span className="jam-arrange-hint">makes beats 5–8 match beats 1–4</span>
+
+        <span className="jam-arrange-sep" aria-hidden="true" />
+
+        <label className="jam-inline-label">
+          Copy
+          <select className="jam-select" value={props.rangeIndex}
+                  onChange={(e) => props.onRange(Number(e.target.value))}>
+            {COPY_RANGES.map((r, i) => <option key={r.label} value={i}>{r.label}</option>)}
+          </select>
+        </label>
+
+        <label className="jam-inline-label">
+          of
+          <select className="jam-select" value={props.scope}
+                  onChange={(e) => props.onScope(e.target.value)}>
+            {SCOPES.map((sc) => <option key={sc.value} value={sc.value}>{sc.label}</option>)}
+          </select>
+        </label>
+
+        <Button size="sm" variant="ghost" onClick={props.onCopy}>Copy</Button>
+
+        <label className="jam-inline-label">
+          Paste at beat
+          <select className="jam-select" value={props.pasteBeat}
+                  onChange={(e) => props.onPasteBeat(Number(e.target.value))}>
+            {Array.from({ length: BEATS }, (_, i) => (
+              <option key={i} value={i}>{i + 1}</option>
+            ))}
+          </select>
+        </label>
+
+        <Button size="sm" variant={props.hasClip ? 'primary' : 'ghost'}
+                disabled={!props.hasClip} onClick={props.onPaste}>Paste</Button>
+
+        {props.clipNote && <span className="jam-arrange-hint">{props.clipNote}</span>}
+      </div>
+    );
+  }
+
+  /* =================================================================
+     SAMPLE PAD — record something with the microphone.
+
+     The mic is only opened when this button is pressed, and the
+     recording never leaves the visitor's machine: it isn't in the loop
+     link and it can't be in the .mid, because a MIDI file stores notes
+     rather than sound. The page says so rather than letting anyone
+     assume otherwise.
+     ================================================================= */
+  const MIC_MESSAGES = {
+    denied: "Your browser blocked the microphone. If you want to try again, allow mic access for this site in the address bar and hit record.",
+    'no-device': "No microphone turned up. Plug one in, or check nothing else has taken it over.",
+    insecure: "Browsers only hand over the microphone on a secure connection, and this page isn't on one.",
+    unsupported: "This browser won't let a web page record audio. Chrome, Firefox or a recent Safari will.",
+    'decode-failed': "The recording came back in a format we couldn't read. Worth another go.",
+    empty: "That came back silent — nothing was captured."
+  };
+
+  function SamplePad({ state, onRecord, onStop, onPlay, onClear, pitched, onPitched }) {
+    return (
+      <div className="jam-sample">
+        <div className="jam-sample-main">
+          {state.recording ? (
+            <Button size="sm" variant="flag" className="jam-rec-armed" onClick={onStop}>
+              ■ Stop ({state.countdown}s)
+            </Button>
+          ) : (
+            <Button size="sm" variant={state.seconds ? 'ghost' : 'outline'} onClick={onRecord}>
+              {state.seconds ? 'Re-record sample' : '● Record a sample'}
+            </Button>
+          )}
+
+          {state.seconds != null && !state.recording && (
+            <React.Fragment>
+              <Button size="sm" variant="ghost" onClick={onPlay}>Hear it</Button>
+              <Button size="sm" variant="ghost" onClick={onClear}>Clear</Button>
+              <span className="jam-tempo-unit">{state.seconds}s captured</span>
+              <label className="jam-inline-label jam-check">
+                <input type="checkbox" checked={pitched}
+                       onChange={(e) => onPitched(e.target.checked)} />
+                Play it from the keyboard
+              </label>
+            </React.Fragment>
+          )}
+        </div>
+
+        <p className="jam-sample-note">
+          {state.error
+            ? MIC_MESSAGES[state.error] || 'The microphone could not be started.'
+            : 'Record up to ' + E.MAX_SAMPLE_SECONDS + ' seconds — a word, a clap, a guitar stab — ' +
+              'and lay it into the grid. It stays on your device: audio can\u2019t travel in the loop ' +
+              'link or the .mid, so it won\u2019t reach the band.'}
+        </p>
+      </div>
+    );
+  }
+
+  /* =================================================================
+     THE GRID — drum lanes, the sample lane, and a row per keyboard
+     layer showing what's been recorded into it.
+     ================================================================= */
+  function StepGrid(props) {
+    const { pattern, uiStep, onToggle, onAudition, onToggleSample, hasSample,
+            layerSteps, selectedLayer, onSelectLayer } = props;
+
+    const cell = (key, opts) => (
+      <button key={key} type="button" className="jam-cell"
+              data-beat={opts.step % E.STEPS_PER_BEAT === 0}
+              data-bar={opts.step % 16 === 0}
+              data-playing={uiStep === opts.step}
+              aria-pressed={!!opts.on}
+              aria-label={opts.label}
+              onClick={opts.onClick} />
+    );
+
     return (
       <div className="jam-grid-scroll">
         <div className="jam-grid">
           <div className="jam-row jam-ruler" aria-hidden="true">
             <div />
             {ALL_STEPS.map((s) => (
-              <div key={s} className="jam-tick" data-beat={s % 4 === 0}>
-                {s % 4 === 0 ? (s / 4) + 1 : '·'}
+              <div key={s} className="jam-tick"
+                   data-beat={s % E.STEPS_PER_BEAT === 0}
+                   data-bar={s % 16 === 0}>
+                {s % E.STEPS_PER_BEAT === 0 ? (s / E.STEPS_PER_BEAT) + 1 : '·'}
               </div>
             ))}
           </div>
@@ -336,28 +530,47 @@
               <button type="button" className="jam-lane-label"
                       onClick={() => onAudition(lane.id)}
                       title={'Hear the ' + lane.label}>{lane.label}</button>
-              {ALL_STEPS.map((s) => (
-                <button key={s} type="button" className="jam-cell"
-                        data-beat={s % 4 === 0}
-                        data-playing={uiStep === s}
-                        aria-pressed={!!pattern.drums[li][s]}
-                        aria-label={lane.label + ', step ' + (s + 1)}
-                        onClick={() => onToggle(li, s)} />
-              ))}
+              {ALL_STEPS.map((s) => cell(s, {
+                step: s,
+                on: pattern.drums[li][s],
+                label: lane.label + ', step ' + (s + 1),
+                onClick: () => onToggle(li, s)
+              }))}
             </div>
           ))}
 
-          {/* Not editable by clicking — this row shows what you played. */}
-          <div className="jam-row">
-            <div className="jam-lane-label" style={{ cursor: 'default', color: 'var(--volt-glow)' }}>Keys</div>
-            {ALL_STEPS.map((s) => (
-              <div key={s} className="jam-cell"
-                   data-beat={s % 4 === 0}
-                   data-playing={uiStep === s}
-                   data-note={!!noteSteps[s]}
-                   aria-hidden="true" />
-            ))}
-          </div>
+          {hasSample && (
+            <div className="jam-row">
+              <div className="jam-lane-label jam-lane-sample">Sample</div>
+              {ALL_STEPS.map((s) => cell('smp' + s, {
+                step: s,
+                on: pattern.sample[s],
+                label: 'Sample, step ' + (s + 1),
+                onClick: () => onToggleSample(s)
+              }))}
+            </div>
+          )}
+
+          {pattern.layers.map((layer, li) => (
+            <div className="jam-row" key={'layer' + li}>
+              <button type="button"
+                      className="jam-lane-label jam-lane-layer"
+                      data-selected={selectedLayer === li}
+                      onClick={() => onSelectLayer(li)}
+                      title={'Play and record into layer ' + (li + 1)}>
+                L{li + 1} · {(E.VOICES.find((v) => v.id === layer.voice) || {}).label}
+              </button>
+              {ALL_STEPS.map((s) => (
+                <div key={s} className="jam-cell"
+                     data-beat={s % E.STEPS_PER_BEAT === 0}
+                     data-bar={s % 16 === 0}
+                     data-playing={uiStep === s}
+                     data-note={!!layerSteps[li][s]}
+                     data-dim={layer.muted}
+                     aria-hidden="true" />
+              ))}
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -424,27 +637,55 @@
      THE STUDIO — everything above the send form.
      ================================================================= */
   function Studio(props) {
-    const noteSteps = {};
-    props.pattern.notes.forEach((n) => { noteSteps[n.step] = true; });
+    const layerSteps = props.pattern.layers.map((layer) => {
+      const map = {};
+      layer.notes.forEach((n) => { map[n.step] = true; });
+      return map;
+    });
+
+    const selectedName = 'Layer ' + (props.selectedLayer + 1) +
+      (props.sampleKeyboard ? ' · sample' : '');
 
     return (
       <section style={{ padding: '0 0 var(--section-y)' }}>
-        <div className="nm-container">
+        {/* Wider than the rest of the page on purpose: thirty-two steps
+            plus a label column need more room than the standard column,
+            and on a big screen that's the difference between the whole
+            loop being visible and having to scroll to see the end of it. */}
+        <div className="nm-container jam-wide">
           <SectionHeading kicker="Step One" title="The Audition" />
           <p style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-body)',
-                      color: 'var(--bone-300)', margin: '18px 0 26px', maxWidth: 640, lineHeight: 1.55 }}>
-            One bar, sixteen steps. Build a beat, play something over the top of it, and make it
-            count — this is the part where creativity is formally assessed. There is no wrong
-            answer. There is, however, a boring one.
+                      color: 'var(--bone-300)', margin: '18px 0 26px', maxWidth: 680, lineHeight: 1.55 }}>
+            Two bars, thirty-two steps. Build a beat, then record a riff over it, let it loop,
+            and play another one on top — up to four layers, each with its own voice. This is
+            the part where creativity is formally assessed. There is no wrong answer. There
+            is, however, a boring one.
           </p>
-          <Card padding="clamp(20px,3vw,36px)">
-            <Transport {...props} />
 
-            <div style={{ marginTop: 'var(--sp-6)' }}>
+          <Card padding="clamp(20px,3vw,36px)">
+            <Transport {...props} layerName={selectedName} />
+
+            <div style={{ marginTop: 'var(--sp-5)' }}>
+              <LayerStrip layers={props.pattern.layers}
+                          selected={props.selectedLayer}
+                          onSelect={props.onSelectLayer}
+                          onVoice={props.onLayerVoice}
+                          onMute={props.onLayerMute}
+                          onSolo={props.onLayerSolo}
+                          onClear={props.onLayerClear} />
+            </div>
+
+            <div style={{ marginTop: 'var(--sp-5)' }}>
               <StepGrid pattern={props.pattern} uiStep={props.uiStep}
                         onToggle={props.onToggle} onAudition={props.onAudition}
-                        noteSteps={noteSteps} />
+                        onToggleSample={props.onToggleSample}
+                        hasSample={props.sampleState.seconds != null}
+                        layerSteps={layerSteps}
+                        selectedLayer={props.selectedLayer}
+                        onSelectLayer={props.onSelectLayer} />
             </div>
+
+            <ArrangeBar {...props.arrange} />
 
             <Keyboard baseMidi={props.baseMidi} down={props.down}
                       onPress={props.onPress} onRelease={props.onRelease} />
@@ -459,14 +700,22 @@
               </span>
             </div>
 
+            <SamplePad state={props.sampleState}
+                       onRecord={props.onSampleRecord}
+                       onStop={props.onSampleStop}
+                       onPlay={props.onSamplePlay}
+                       onClear={props.onSampleClear}
+                       pitched={props.sampleKeyboard}
+                       onPitched={props.onSampleKeyboard} />
+
             <div className="jam-actions" style={{ marginTop: 'var(--sp-5)' }}>
               <Button size="sm" variant="ghost" onClick={props.onClearDrums}>Clear Drums</Button>
-              <Button size="sm" variant="ghost" onClick={props.onClearKeys}>Clear Keys</Button>
+              <Button size="sm" variant="ghost" onClick={props.onClearKeys}>Clear All Layers</Button>
               <Button size="sm" variant="ghost" onClick={props.onClearAll}>Start Over</Button>
               <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-stamp)', fontSize: 11,
                              letterSpacing: '.12em', textTransform: 'uppercase',
                              color: 'var(--bone-400)', alignSelf: 'center' }}>
-                {props.pattern.notes.length} note{props.pattern.notes.length === 1 ? '' : 's'} recorded
+                {E.countNotes(props.pattern)} note{E.countNotes(props.pattern) === 1 ? '' : 's'} across {E.MAX_LAYERS} layers
               </span>
             </div>
           </Card>
@@ -746,6 +995,19 @@
     const [uiStep, setUiStep] = React.useState(-1);
     const [baseMidi, setBaseMidi] = React.useState(60);   // middle C
     const [down, setDown] = React.useState({});
+    const [selectedLayer, setSelectedLayer] = React.useState(0);
+
+    // Arranging
+    const [clip, setClip] = React.useState(null);
+    const [rangeIndex, setRangeIndex] = React.useState(4);   // "Beats 1–4"
+    const [pasteBeat, setPasteBeat] = React.useState(4);     // beat 5
+    const [scope, setScope] = React.useState('all');
+
+    // The microphone pad
+    const [sampleState, setSampleState] = React.useState({
+      seconds: null, recording: false, error: null, countdown: 0
+    });
+    const [sampleKeyboard, setSampleKeyboard] = React.useState(false);
 
     /* The scheduler runs on a timer, outside React's render cycle. If it
        read state directly it would capture the values from the render
@@ -758,9 +1020,19 @@
     recordingRef.current = recording;
     const baseMidiRef = React.useRef(baseMidi);
     baseMidiRef.current = baseMidi;
+    const selectedRef = React.useRef(selectedLayer);
+    selectedRef.current = selectedLayer;
+    const sampleKbdRef = React.useRef(sampleKeyboard);
+    sampleKbdRef.current = sampleKeyboard;
 
     const heldRef = React.useRef({});      // midi -> live note handle
     const kbdRef = React.useRef({});       // computer key -> the midi it started
+
+    const transportState = React.useCallback(() => ({
+      pattern: patternRef.current,
+      bpm: patternRef.current.bpm,
+      metronome: metronomeRef.current
+    }), []);
 
     /* --- transport ------------------------------------------------- */
     const togglePlay = React.useCallback(() => {
@@ -770,14 +1042,10 @@
         setRecording(false);
       } else {
         // Called straight from a click, which is what lets audio start.
-        E.start(() => ({
-          pattern: patternRef.current,
-          bpm: patternRef.current.bpm,
-          metronome: metronomeRef.current
-        }));
+        E.start(transportState);
         setPlaying(true);
       }
-    }, []);
+    }, [transportState]);
 
     const toggleRecord = React.useCallback(() => {
       setRecording((r) => {
@@ -785,20 +1053,17 @@
         // Arming record with the transport stopped is a dead end, so
         // start it rolling too.
         if (next && !E.isPlaying()) {
-          E.start(() => ({
-            pattern: patternRef.current,
-            bpm: patternRef.current.bpm,
-            metronome: metronomeRef.current
-          }));
+          E.start(transportState);
           setPlaying(true);
         }
         return next;
       });
-    }, []);
+    }, [transportState]);
 
     /* --- playhead --------------------------------------------------
        Driven off the audio clock, and only calls setState when the step
-       actually changes — sixteen times a bar, not sixty times a second. */
+       actually changes — thirty-two times a bar pair, not sixty times a
+       second. */
     React.useEffect(() => {
       if (!playing) { setUiStep(-1); return undefined; }
       let raf = 0, alive = true, drawn = -1;
@@ -853,27 +1118,87 @@
       }));
     }, []);
 
+    const toggleSampleCell = React.useCallback((step) => {
+      E.ensureAudio();
+      const turningOn = !patternRef.current.sample[step];
+      if (turningOn && !E.isPlaying()) E.playSample();
+      setPattern((p) => Object.assign({}, p, {
+        sample: p.sample.map((on, s) => (s === step ? !on : on))
+      }));
+    }, []);
+
     const audition = React.useCallback((laneId) => {
       E.ensureAudio();
       E.playDrum(laneId);
     }, []);
 
-    const addNote = React.useCallback((note) => {
-      setPattern((p) => {
-        if (p.notes.length >= E.MAX_NOTES) return p;
-        // Replace rather than stack when the same pitch is played on the
-        // same step twice, so overdubbing doesn't pile up duplicates.
-        const kept = p.notes.filter((n) => !(n.step === note.step && n.midi === note.midi));
-        return Object.assign({}, p, { notes: kept.concat([note]) });
-      });
+    const addNote = React.useCallback((layerIndex, note) => {
+      setPattern((p) => Object.assign({}, p, {
+        layers: p.layers.map((layer, i) => {
+          if (i !== layerIndex) return layer;
+          if (layer.notes.length >= E.MAX_NOTES) return layer;
+          // Replace rather than stack when the same pitch is played on
+          // the same step twice, so overdubbing doesn't pile up copies.
+          const kept = layer.notes.filter(
+            (n) => !(n.step === note.step && n.midi === note.midi));
+          return Object.assign({}, layer, { notes: kept.concat([note]) });
+        })
+      }));
     }, []);
+
+    /* --- layers ----------------------------------------------------- */
+    const updateLayer = React.useCallback((index, changes) => {
+      setPattern((p) => Object.assign({}, p, {
+        layers: p.layers.map((layer, i) =>
+          i === index ? Object.assign({}, layer, changes) : layer)
+      }));
+    }, []);
+
+    const setLayerVoice = React.useCallback((i, voice) => {
+      updateLayer(i, { voice });
+      setSelectedLayer(i);
+    }, [updateLayer]);
+
+    const toggleMute = React.useCallback((i) => {
+      setPattern((p) => Object.assign({}, p, {
+        layers: p.layers.map((layer, j) =>
+          j === i ? Object.assign({}, layer, { muted: !layer.muted }) : layer)
+      }));
+    }, []);
+
+    const toggleSolo = React.useCallback((i) => {
+      setPattern((p) => Object.assign({}, p, {
+        layers: p.layers.map((layer, j) =>
+          j === i ? Object.assign({}, layer, { solo: !layer.solo }) : layer)
+      }));
+    }, []);
+
+    const clearLayer = React.useCallback((i) => updateLayer(i, { notes: [] }), [updateLayer]);
 
     /* --- playing notes --------------------------------------------- */
     const pressNote = React.useCallback((midi) => {
       if (heldRef.current[midi]) return;             // already down
-      const handle = E.noteOn(patternRef.current.voice, midi, 100);
+
+      /* With the sample pad switched over to the keyboard, the keys fire
+         the recording pitched up and down instead of a synth voice. It's
+         a one-shot, so there's nothing to release. */
+      if (sampleKbdRef.current && E.hasSample()) {
+        E.playSample(null, midi);
+        setDown((d) => Object.assign({}, d, { [midi]: true }));
+        window.setTimeout(() => setDown((d) => {
+          const next = Object.assign({}, d);
+          delete next[midi];
+          return next;
+        }), 140);
+        return;
+      }
+
+      const layerIndex = selectedRef.current;
+      const layer = patternRef.current.layers[layerIndex];
+      const handle = E.noteOn(layer.voice, midi, 100);
       heldRef.current[midi] = {
         handle: handle,
+        layer: layerIndex,
         step: E.isPlaying() ? E.liveStep() : null,
         at: E.now()
       };
@@ -895,7 +1220,7 @@
         const stepDur = E.stepDuration(patternRef.current.bpm);
         const heldFor = Math.max(E.now() - held.at, 0);
         const len = Math.min(Math.max(Math.round(heldFor / stepDur), 1), STEPS);
-        addNote({ step: held.step, midi: midi, len: len, velocity: 100 });
+        addNote(held.layer, { step: held.step, midi: midi, len: len, velocity: 100 });
       }
     }, [addNote]);
 
@@ -953,6 +1278,72 @@
       };
     }, []);
 
+    /* --- arranging --------------------------------------------------- */
+    const doCopy = React.useCallback(() => {
+      const r = COPY_RANGES[rangeIndex];
+      setClip(Object.assign(E.copyRange(patternRef.current, r.from, r.len, scope), {
+        label: r.label, scopeLabel: (SCOPES.find((sc) => sc.value === scope) || {}).label
+      }));
+    }, [rangeIndex, scope]);
+
+    const doPaste = React.useCallback(() => {
+      if (!clip) return;
+      setPattern((p) => E.pasteRange(p, clip, pasteBeat * E.STEPS_PER_BEAT));
+    }, [clip, pasteBeat]);
+
+    const doDouble = React.useCallback(() => {
+      setPattern((p) => E.duplicateFirstHalf(p));
+    }, []);
+
+    /* --- the microphone ---------------------------------------------- */
+    const countdownRef = React.useRef(null);
+
+    const stopCountdown = () => {
+      if (countdownRef.current) {
+        window.clearInterval(countdownRef.current);
+        countdownRef.current = null;
+      }
+    };
+
+    const startSample = React.useCallback(() => {
+      E.ensureAudio();
+      setSampleState((s) => Object.assign({}, s, {
+        error: null, recording: true, countdown: E.MAX_SAMPLE_SECONDS
+      }));
+
+      stopCountdown();
+      countdownRef.current = window.setInterval(() => {
+        setSampleState((s) => Object.assign({}, s, {
+          countdown: Math.max(0, s.countdown - 1)
+        }));
+      }, 1000);
+
+      E.recordSample(E.MAX_SAMPLE_SECONDS).then((info) => {
+        stopCountdown();
+        setSampleState({ seconds: info.seconds, recording: false, error: null, countdown: 0 });
+      }, (err) => {
+        stopCountdown();
+        setSampleState({
+          seconds: E.hasSample() ? (E.sampleInfo() || {}).seconds : null,
+          recording: false,
+          error: (err && err.message) || 'unsupported',
+          countdown: 0
+        });
+      });
+    }, []);
+
+    const stopSample = React.useCallback(() => E.stopSampleRecording(), []);
+
+    const clearSample = React.useCallback(() => {
+      E.clearSample();
+      setSampleKeyboard(false);
+      setSampleState({ seconds: null, recording: false, error: null, countdown: 0 });
+      // The lane is meaningless without the audio behind it.
+      setPattern((p) => Object.assign({}, p, { sample: p.sample.map(() => false) }));
+    }, []);
+
+    React.useEffect(() => stopCountdown, []);
+
     /* --- sharing ---------------------------------------------------- */
     const loopCode = E.encodeLoop(pattern);
     const base = (CONFIG.siteUrl || 'https://bigdaddyand.co/jam.html').replace(/#.*$/, '');
@@ -965,14 +1356,23 @@
     /* --- clearing ---------------------------------------------------- */
     const clearDrums = React.useCallback(() => {
       setPattern((p) => Object.assign({}, p, {
-        drums: p.drums.map((row) => row.map(() => false))
+        drums: p.drums.map((row) => row.map(() => false)),
+        sample: p.sample.map(() => false)
       }));
     }, []);
     const clearKeys = React.useCallback(() => {
-      setPattern((p) => Object.assign({}, p, { notes: [] }));
+      setPattern((p) => Object.assign({}, p, {
+        layers: p.layers.map((layer) => Object.assign({}, layer, { notes: [] }))
+      }));
     }, []);
     const clearAll = React.useCallback(() => {
-      setPattern((p) => Object.assign(E.emptyPattern(), { bpm: p.bpm, voice: p.voice }));
+      setPattern((p) => {
+        const fresh = E.emptyPattern();
+        fresh.bpm = p.bpm;
+        // Keep the voices they picked; only the notes go.
+        fresh.layers.forEach((layer, i) => { layer.voice = p.layers[i].voice; });
+        return fresh;
+      });
     }, []);
 
     return (
@@ -982,23 +1382,46 @@
         <Studio
           pattern={pattern}
           bpm={pattern.bpm}
-          voice={pattern.voice}
           playing={playing}
           recording={recording}
           metronome={metronome}
           uiStep={uiStep}
           baseMidi={baseMidi}
           down={down}
+          selectedLayer={selectedLayer}
+          sampleState={sampleState}
+          sampleKeyboard={sampleKeyboard}
           onPlay={togglePlay}
           onRecord={toggleRecord}
           onMetronome={() => setMetronome((m) => !m)}
           onBpm={(v) => setPattern((p) => Object.assign({}, p, { bpm: v }))}
-          onVoice={(v) => setPattern((p) => Object.assign({}, p, { voice: v }))}
           onToggle={toggleCell}
+          onToggleSample={toggleSampleCell}
           onAudition={audition}
           onPress={pressNote}
           onRelease={releaseNote}
           onOctave={(d) => setBaseMidi((m) => Math.min(84, Math.max(24, m + d * 12)))}
+          onSelectLayer={setSelectedLayer}
+          onLayerVoice={setLayerVoice}
+          onLayerMute={toggleMute}
+          onLayerSolo={toggleSolo}
+          onLayerClear={clearLayer}
+          onSampleRecord={startSample}
+          onSampleStop={stopSample}
+          onSamplePlay={() => { E.ensureAudio(); E.playSample(); }}
+          onSampleClear={clearSample}
+          onSampleKeyboard={setSampleKeyboard}
+          arrange={{
+            rangeIndex, scope, pasteBeat,
+            hasClip: !!clip,
+            clipNote: clip ? 'holding ' + clip.label + ' · ' + clip.scopeLabel : '',
+            onRange: setRangeIndex,
+            onScope: setScope,
+            onPasteBeat: setPasteBeat,
+            onCopy: doCopy,
+            onPaste: doPaste,
+            onDouble: doDouble
+          }}
           onClearDrums={clearDrums}
           onClearKeys={clearKeys}
           onClearAll={clearAll}

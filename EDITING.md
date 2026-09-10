@@ -75,9 +75,20 @@ swap instructions: [`assets/README.md`](assets/README.md).
 ## The jam page ("Join the Company")
 
 `jam.html` is a little synth and drum machine, written up as a (joking) careers
-page: a visitor programs a one-bar loop, plays something over it, and submits it
-to the band for review. It's linked from the **hero button on the home page**,
-the top nav, and the footer's **Band** column.
+page: a visitor builds a two-bar loop, records riffs over it, and submits the
+result to the band for review. It's linked from the **hero button on the home
+page**, the top nav, and the footer's **Band** column.
+
+What's in it:
+
+- **Two bars, 32 steps.** Six drum lanes, plus a lane for a recorded sample.
+- **Four keyboard layers**, each with its own voice, mute, solo and clear.
+  Record a riff, let it loop, then riff over it on the next layer. The selected
+  layer (the highlighted card) is the one the keyboard plays and records into.
+- **Five voices**: Rock Organ, Fuzz Bass, E-Piano, Synth and Choir.
+- **Copy, paste and Double It** for building a full beat without programming
+  every step by hand.
+- **A microphone sample pad** — see below.
 
 ### ⚠️ Switching sending on — the one thing left to do
 
@@ -152,6 +163,26 @@ The field names in the submitted form (`position_applying_for`, `cover_letter`,
 `listen_to_the_loop`…) are what show up as the labels in the email you receive,
 so rename those if you'd rather read something else.
 
+### The microphone sample pad
+
+Visitors can record up to four seconds with their own microphone and lay it
+into the grid, or play it pitched across the keyboard.
+
+Two things are true of it, and the page says both out loud:
+
+- **The mic is only ever opened by pressing the record button**, never on page
+  load, and the stream is stopped the moment recording ends so the browser's
+  recording indicator goes out.
+- **The audio never leaves the visitor's device.** It isn't in the loop link and
+  it can't be in the `.mid` — a MIDI file stores notes, not sound. So a sample
+  is a toy for the person making the loop; it won't reach you. The sample lane
+  is left out of the shared code for the same reason: a row of hits that make no
+  sound would only confuse whoever opened the link.
+
+If the mic is blocked, missing, or the browser is too old, the pad says which
+of those it was instead of failing quietly. Those messages live in
+`MIC_MESSAGES` in `jam.html`.
+
 ### Changing the sound
 
 `assets/js/jam-engine.js` holds everything that makes noise. It has no interface
@@ -159,10 +190,17 @@ code in it, so you can poke at it from the browser console — try `BDJam.playDr
 
 | You want to change… | Find this in `jam-engine.js` |
 |---|---|
-| The six drum lanes (or their MIDI notes) | `const LANES = [ … ]` |
-| The three keyboard voices | `const VOICES = [ … ]` and the `build…` functions |
+| The six drum lanes (or their MIDI notes) | `var LANES = [ … ]` |
+| The five keyboard voices | `var VOICES = [ … ]` and the `build…` functions |
+| How long the loop is, or how many layers | `var STEPS`, `var MAX_LAYERS` |
 | Tempo range and default | `BPM_MIN`, `BPM_MAX`, `BPM_DEFAULT` |
 | How the kick/snare/hat sound | `drumKick`, `drumSnare`, `drumHat`, … |
+| How long a sample can be | `MAX_SAMPLE_SECONDS` |
+
+Changing `STEPS` or `MAX_LAYERS` changes the shared loop code too. That's fine —
+the code carries a version number, and older links keep working: a link made
+before this rewrite still opens, with its single bar landing in the first half of
+the loop and its notes becoming layer one.
 
 One rule if you edit the sound: never fade a volume to exactly `0` with
 `exponentialRampToValueAtTime` — browsers throw an error. Fade to the tiny value

@@ -17,10 +17,12 @@
 
   /* ---------------------------------------------------------------
      THE SHAPE OF A LOOP
-     One bar of 4/4, sliced into 16 sixteenth-notes ("steps").
+     Two bars of 4/4, sliced into 32 sixteenth-notes ("steps").
      --------------------------------------------------------------- */
 
-  var STEPS = 16;
+  var STEPS = 32;               // two bars of 4/4, in sixteenth notes
+  var STEPS_PER_BEAT = 4;
+  var MAX_LAYERS = 4;
 
   /* The six drum lanes, top to bottom. `midi` is the General MIDI
      drum note each lane exports as, so the .mid file lands on the
@@ -34,23 +36,44 @@
     { id: 'cow',   label: 'Cowbell',    midi: 56 }
   ];
 
-  /* The three keyboard voices. `program` is the General MIDI patch
-     number written into the exported file. */
+  /* The keyboard voices. `program` is the General MIDI patch number
+     written into the exported file. */
   var VOICES = [
     { id: 'organ',    label: 'Rock Organ', program: 18 },
     { id: 'fuzzbass', label: 'Fuzz Bass',  program: 39 },
-    { id: 'epiano',   label: 'E-Piano',    program: 4  }
+    { id: 'epiano',   label: 'E-Piano',    program: 4  },
+    { id: 'synth',    label: 'Synth',      program: 81 },
+    { id: 'choir',    label: 'Choir',      program: 52 }
   ];
 
   var BPM_MIN = 60, BPM_MAX = 180, BPM_DEFAULT = 108;
-  var MAX_NOTES = 128;          // keeps the shareable code a sane length
+  var MAX_NOTES = 96;           // per layer, to keep the shared code sane
+  var MAX_SAMPLE_SECONDS = 4;
 
+  function blankSteps() { return new Array(STEPS).fill(false); }
+
+  function emptyLayer(voiceId) {
+    return { voice: voiceId || VOICES[0].id, muted: false, notes: [] };
+  }
+
+  /* A loop is: a tempo, six drum lanes, one lane for a recorded sample,
+     and up to four independent keyboard layers each with its own voice.
+     The sample lane holds only the *pattern* — the audio itself lives in
+     the engine and never leaves the visitor's machine. */
   function emptyPattern() {
     var drums = [];
-    for (var i = 0; i < LANES.length; i++) {
-      drums.push(new Array(STEPS).fill(false));
+    for (var i = 0; i < LANES.length; i++) drums.push(blankSteps());
+    var layers = [];
+    for (var l = 0; l < MAX_LAYERS; l++) {
+      layers.push(emptyLayer(VOICES[Math.min(l, VOICES.length - 1)].id));
     }
-    return { bpm: BPM_DEFAULT, voice: 'organ', drums: drums, notes: [] };
+    // Layer 1 starts on the organ; the rest get distinct voices so
+    // stacking something new is one click rather than three.
+    layers[0].voice = 'organ';
+    if (layers[1]) layers[1].voice = 'fuzzbass';
+    if (layers[2]) layers[2].voice = 'epiano';
+    if (layers[3]) layers[3].voice = 'choir';
+    return { bpm: BPM_DEFAULT, drums: drums, sample: blankSteps(), layers: layers };
   }
 
   function clamp(n, lo, hi) { return n < lo ? lo : (n > hi ? hi : n); }
@@ -330,7 +353,92 @@
     };
   }
 
-  var BUILDERS = { organ: buildOrgan, fuzzbass: buildFuzzBass, epiano: buildEPiano };
+  /* Supersaw lead: several sawtooths detuned a few cents either side of
+     the note. The tiny pitch differences beat against each other, which
+     is the whole trick — one saw sounds thin, five sound enormous. */
+  function buildSynth(out, hz, when, tOff, vel) {
+    var oscs = [], nodes = [];
+
+    var lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.Q.value = 9;
+    lp.frequency.setValueAtTime(Math.min(hz * 12, 7000), when);
+    lp.frequency.exponentialRampToValueAtTime(
+      Math.max(hz * 2.5, 240), Math.max(tOff, when + 0.14));
+    lp.connect(out);
+    nodes.push(lp);
+
+    [-14, -7, 0, 7, 14].forEach(function (cents) {
+      var osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.value = hz;
+      osc.detune.value = cents;
+      var g = ctx.createGain();
+      g.gain.value = cents === 0 ? 0.34 : 0.24;
+      osc.connect(g);
+      g.connect(lp);
+      oscs.push(osc);
+      nodes.push(g);
+    });
+
+    return { oscs: oscs, nodes: nodes, peak: 0.15 * vel, attack: 0.006, release: 0.16 };
+  }
+
+  /* Choir "aah": a couple of detuned sawtooths pushed through three
+     bandpass filters parked on the formants of an open vowel. Slow in,
+     slow out, with a little vibrato so it breathes instead of droning. */
+  function buildChoir(out, hz, when, tOff, vel) {
+    var oscs = [], nodes = [];
+
+    var mix = ctx.createGain();
+    mix.gain.value = 1;
+    mix.connect(out);
+    nodes.push(mix);
+
+    // frequency, relative level, resonance — roughly an "aah"
+    var bands = [[800, 1.0, 9], [1150, 0.6, 11], [2900, 0.22, 13]].map(function (f) {
+      var bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = f[0];
+      bp.Q.value = f[2];
+      var bg = ctx.createGain();
+      bg.gain.value = f[1];
+      bp.connect(bg);
+      bg.connect(mix);
+      nodes.push(bp, bg);
+      return bp;
+    });
+
+    var vib = ctx.createOscillator();
+    var vibAmt = ctx.createGain();
+    vib.frequency.value = 4.7;
+    vibAmt.gain.value = hz * 0.007;
+    vib.connect(vibAmt);
+    oscs.push(vib);
+    nodes.push(vibAmt);
+
+    [-8, 8].forEach(function (cents) {
+      var osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.value = hz;
+      osc.detune.value = cents;
+      vibAmt.connect(osc.frequency);
+      bands.forEach(function (bp) { osc.connect(bp); });
+      oscs.push(osc);
+    });
+
+    // Slow attack and a long tail are what make it read as voices
+    // rather than as a synth pretending to be voices.
+    return { oscs: oscs, nodes: nodes, peak: 0.2 * vel, attack: 0.15, release: 0.4 };
+  }
+
+  var BUILDERS = {
+    organ: buildOrgan,
+    fuzzbass: buildFuzzBass,
+    epiano: buildEPiano,
+    synth: buildSynth,
+    choir: buildChoir
+  };
 
   function buildVoice(voiceId, out, hz, when, tOff, vel) {
     return (BUILDERS[voiceId] || buildOrgan)(out, hz, when, tOff, vel);
@@ -501,6 +609,162 @@
     releaseOnEnd(oscs[oscs.length - 1], [oscs[0], bp, g]);
   }
 
+  /* ---------------------------------------------------------------
+     THE SAMPLE PAD
+
+     A short recording made with the visitor's own microphone. Two
+     rules shape everything here:
+
+       1. The microphone is only ever opened from a deliberate tap on
+          the record button, and the stream's tracks are stopped the
+          moment recording ends, so the browser's "recording" light
+          goes out instead of lingering.
+       2. The audio never leaves the machine it was recorded on. It
+          isn't in the loop code, it isn't in the .mid — MIDI carries
+          notes, not sound — and nothing is uploaded anywhere.
+     --------------------------------------------------------------- */
+
+  var sampleBuffer = null;
+  var activeRecording = null;
+
+  function hasSample() { return !!sampleBuffer; }
+  function clearSample() { sampleBuffer = null; }
+
+  function sampleInfo() {
+    return sampleBuffer ? { seconds: Math.round(sampleBuffer.duration * 10) / 10 } : null;
+  }
+
+  /* Why the mic can't be used, or null if it can. Checked before
+     asking, so the page can explain instead of failing silently. */
+  function micBlockedReason() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      // Browsers only expose this on https (localhost counts).
+      return window.isSecureContext === false ? 'insecure' : 'unsupported';
+    }
+    if (typeof window.MediaRecorder === 'undefined') return 'unsupported';
+    return null;
+  }
+
+  function stopStream(stream) {
+    try {
+      stream.getTracks().forEach(function (t) { t.stop(); });
+    } catch (e) {}
+  }
+
+  function blobToArrayBuffer(blob) {
+    if (blob.arrayBuffer) return blob.arrayBuffer();
+    return new Promise(function (resolve, reject) {
+      var fr = new FileReader();
+      fr.onload = function () { resolve(fr.result); };
+      fr.onerror = function () { reject(new Error('read-failed')); };
+      fr.readAsArrayBuffer(blob);
+    });
+  }
+
+  function trimTo(buffer, seconds) {
+    if (buffer.duration <= seconds) return buffer;
+    var frames = Math.floor(seconds * buffer.sampleRate);
+    var out = ctx.createBuffer(buffer.numberOfChannels, frames, buffer.sampleRate);
+    for (var c = 0; c < buffer.numberOfChannels; c++) {
+      out.getChannelData(c).set(buffer.getChannelData(c).subarray(0, frames));
+    }
+    return out;
+  }
+
+  /* Opens the mic, records, and resolves with { seconds }. Rejects with
+     an Error whose message is one of: insecure, unsupported, denied,
+     no-device, decode-failed, empty. */
+  function recordSample(maxSeconds, onReady) {
+    maxSeconds = Math.min(maxSeconds || MAX_SAMPLE_SECONDS, MAX_SAMPLE_SECONDS);
+
+    return new Promise(function (resolve, reject) {
+      var blocked = micBlockedReason();
+      if (blocked) { reject(new Error(blocked)); return; }
+      if (!ensureAudio()) { reject(new Error('unsupported')); return; }
+
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+        var rec;
+        try {
+          rec = new MediaRecorder(stream);
+        } catch (e) {
+          stopStream(stream);
+          reject(new Error('unsupported'));
+          return;
+        }
+
+        var chunks = [];
+        var timer = window.setTimeout(finish, maxSeconds * 1000);
+
+        function finish() {
+          window.clearTimeout(timer);
+          if (rec.state !== 'inactive') { try { rec.stop(); } catch (e) {} }
+        }
+
+        rec.ondataavailable = function (e) {
+          if (e.data && e.data.size) chunks.push(e.data);
+        };
+
+        rec.onstop = function () {
+          window.clearTimeout(timer);
+          stopStream(stream);          // releases the mic indicator
+          activeRecording = null;
+          if (!chunks.length) { reject(new Error('empty')); return; }
+
+          blobToArrayBuffer(new Blob(chunks, { type: rec.mimeType || 'audio/webm' }))
+            .then(function (buf) {
+              // Callback form, because Safari's promise form is patchy.
+              ctx.decodeAudioData(buf, function (audio) {
+                sampleBuffer = trimTo(audio, maxSeconds);
+                resolve(sampleInfo());
+              }, function () { reject(new Error('decode-failed')); });
+            })
+            .catch(function () { reject(new Error('decode-failed')); });
+        };
+
+        // Stopping early is the common case — the button says "Stop".
+        activeRecording = { stop: finish, startedAt: Date.now(), maxSeconds: maxSeconds };
+        rec.start();
+        if (onReady) onReady(activeRecording);
+      }, function (err) {
+        var name = (err && err.name) || '';
+        if (name === 'NotAllowedError' || name === 'SecurityError') reject(new Error('denied'));
+        else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') reject(new Error('no-device'));
+        else reject(new Error('unsupported'));
+      });
+    });
+  }
+
+  function isRecordingSample() { return !!activeRecording; }
+  function stopSampleRecording() { if (activeRecording) activeRecording.stop(); }
+
+  /* Play the sample. Pass a midi note to pitch it — the keyboard uses
+     this, the grid lane doesn't. */
+  function playSample(when, midi, velocity) {
+    if (!ensureAudio() || !sampleBuffer) return 0;
+    when = Math.max(when || now(), now());
+
+    var src = ctx.createBufferSource();
+    src.buffer = sampleBuffer;
+    var rate = (midi == null) ? 1 : Math.pow(2, (midi - 60) / 12);
+    src.playbackRate.value = rate;
+
+    var g = ctx.createGain();
+    var vel = clamp((velocity == null ? 110 : velocity) / 127, 0.05, 1);
+    g.gain.setValueAtTime(vel * 0.9, when);
+
+    src.connect(g);
+    g.connect(master);
+
+    var dur = sampleBuffer.duration / rate;
+    src.start(when);
+    // A short fade stops the tail clicking when it's cut off.
+    g.gain.setValueAtTime(vel * 0.9, when + Math.max(dur - 0.02, 0.01));
+    g.gain.exponentialRampToValueAtTime(EPS, when + dur);
+    src.stop(when + dur + 0.03);
+    releaseOnEnd(src, [g]);
+    return when + dur;
+  }
+
   /* A dry click for the metronome. Accented on the downbeat. */
   function playClick(t, accent) {
     if (!ensureAudio()) return;
@@ -606,15 +870,24 @@
       if (p.drums[l] && p.drums[l][step]) playDrum(LANES[l].id, when);
     }
 
-    var dur = stepDuration(state.bpm);
-    for (var i = 0; i < p.notes.length; i++) {
-      var n = p.notes[i];
-      if (n.step === step) {
-        playNote(p.voice, n.midi, when, dur * n.len * 0.95, n.velocity || 100);
-      }
-    }
+    if (p.sample && p.sample[step]) playSample(when);
 
-    if (state.metronome && step % 4 === 0) playClick(when, step === 0);
+    /* Solo wins over mute: if anything is soloed, only soloed layers
+       sound. Otherwise everything that isn't muted plays. */
+    var soloing = p.layers.some(function (ly) { return ly.solo; });
+    var dur = stepDuration(state.bpm);
+
+    p.layers.forEach(function (layer) {
+      if (soloing ? !layer.solo : layer.muted) return;
+      for (var i = 0; i < layer.notes.length; i++) {
+        var n = layer.notes[i];
+        if (n.step === step) {
+          playNote(layer.voice, n.midi, when, dur * n.len * 0.95, n.velocity || 100);
+        }
+      }
+    });
+
+    if (state.metronome && step % STEPS_PER_BEAT === 0) playClick(when, step === 0);
   }
 
   /* The playhead is drawn from the same audio clock the notes use, so
@@ -777,25 +1050,39 @@
       ev(0, ORDER_SETUP, metaEvent(0x58, [0x04, 0x02, 0x18, 0x08]))
     ];
 
-    /* Track 1 — keys on channel 0 */
-    var vIdx = voiceIndex(pattern.voice);
-    var t1 = [
-      ev(0, ORDER_SETUP, metaEvent(0x03, ascii(VOICES[vIdx].label))),
-      ev(0, ORDER_SETUP, [0xc0, VOICES[vIdx].program & 0x7f])
-    ];
-    emitNotes(t1, 0, pattern.notes.map(function (n) {
-      var startTick = clamp(n.step, 0, STEPS - 1) * TICKS_PER_STEP;
-      return {
-        note: n.midi,
-        vel: n.velocity || 100,
-        start: startTick,
-        end: startTick + clamp(n.len || 1, 1, STEPS) * TICKS_PER_STEP
-      };
-    }), ev);
+    /* One track per keyboard layer that actually has notes in it, each
+       on its own channel with its own patch, so they arrive in a DAW as
+       separate parts you can mute and edit independently. Channel 9 is
+       skipped — that one is reserved for drums. */
+    var layerTracks = [];
+    var channel = 0;
+    (pattern.layers || []).forEach(function (layer, idx) {
+      if (!layer.notes.length) return;
+      if (channel === 9) channel = 10;
+      if (channel > 15) return;               // 16 channels, and that's that
 
-    /* Track 2 — drums on channel 10 (index 9). The program change picks
-       the GM Standard Kit, which softsynths need and DAWs ignore. */
-    var t2 = [
+      var vIdx = voiceIndex(layer.voice);
+      var name = 'Layer ' + (idx + 1) + ' — ' + VOICES[vIdx].label;
+      var trk = [
+        ev(0, ORDER_SETUP, metaEvent(0x03, ascii(name))),
+        ev(0, ORDER_SETUP, [0xc0 | channel, VOICES[vIdx].program & 0x7f])
+      ];
+      emitNotes(trk, channel, layer.notes.map(function (n) {
+        var startTick = clamp(n.step, 0, STEPS - 1) * TICKS_PER_STEP;
+        return {
+          note: n.midi,
+          vel: n.velocity || 100,
+          start: startTick,
+          end: startTick + clamp(n.len || 1, 1, STEPS) * TICKS_PER_STEP
+        };
+      }), ev);
+      layerTracks.push(buildTrack(trk));
+      channel++;
+    });
+
+    /* Drums on channel 10 (index 9). The program change picks the GM
+       Standard Kit, which softsynths need and DAWs ignore. */
+    var td = [
       ev(0, ORDER_SETUP, metaEvent(0x03, ascii('Drums'))),
       ev(0, ORDER_SETUP, [0xc9, 0x00])
     ];
@@ -807,9 +1094,12 @@
         hits.push({ note: LANES[l].midi, vel: 110, start: tick, end: tick + 12 });
       }
     }
-    emitNotes(t2, 9, hits, ev);
+    emitNotes(td, 9, hits, ev);
 
-    var tracks = [buildTrack(t0), buildTrack(t1), buildTrack(t2)];
+    /* The sample lane is deliberately absent: a MIDI file carries notes,
+       not audio, so there is nothing here that could represent it. */
+
+    var tracks = [buildTrack(t0)].concat(layerTracks, [buildTrack(td)]);
 
     // The track count is derived, never hard-coded — a header that
     // disagrees with the chunks that follow makes parsers read past the
@@ -853,7 +1143,7 @@
      format grows later.
      --------------------------------------------------------------- */
 
-  var MAGIC = 0xbd, VERSION = 1, HEADER_BYTES = 17;
+  var MAGIC = 0xbd, VERSION = 2;
 
   function toBase64Url(bytes) {
     var s = '';
@@ -870,33 +1160,109 @@
     return out;
   }
 
+  /* Pack an array of booleans into bytes, low bit first. */
+  function packBits(arr, count) {
+    var out = [];
+    for (var byte = 0; byte * 8 < count; byte++) {
+      var b = 0;
+      for (var bit = 0; bit < 8; bit++) {
+        var i = byte * 8 + bit;
+        if (i < count && arr[i]) b |= (1 << bit);
+      }
+      out.push(b);
+    }
+    return out;
+  }
+
+  function unpackBits(bytes, offset, count) {
+    var out = new Array(count);
+    for (var i = 0; i < count; i++) {
+      out[i] = !!(bytes[offset + (i >> 3)] & (1 << (i % 8)));
+    }
+    return out;
+  }
+
+  function bytesPerLane(count) { return Math.ceil(count / 8); }
+
+  /* Format 2:
+       byte 0        magic (0xBD)
+       byte 1        version (2)
+       byte 2        bpm - 40
+       byte 3        step count
+       byte 4        layer count
+       then          6 drum lanes, each ceil(steps/8) bytes
+       then per layer:
+                     byte  voice index, with mute in bit 7 and solo in bit 6
+                     byte  note count
+                     3 bytes per note: step, midi, length in steps
+
+     The sample lane is deliberately not in here. The audio can't travel,
+     so a pattern of hits that make no sound would only confuse whoever
+     opened the link. */
   function encodeLoop(pattern) {
+    var steps = STEPS;
+    var layers = (pattern.layers || []).slice(0, MAX_LAYERS);
+
     var bytes = [
       MAGIC,
       VERSION,
       clamp(Math.round(pattern.bpm), 40, 295) - 40,
-      voiceIndex(pattern.voice)
+      steps,
+      layers.length
     ];
 
     for (var l = 0; l < LANES.length; l++) {
-      var lane = pattern.drums[l] || [];
-      var lo = 0, hi = 0;
-      for (var s = 0; s < 8; s++)  { if (lane[s])     lo |= (1 << s); }
-      for (var s2 = 8; s2 < 16; s2++) { if (lane[s2]) hi |= (1 << (s2 - 8)); }
-      bytes.push(lo, hi);
+      bytes = bytes.concat(packBits(pattern.drums[l] || [], steps));
     }
 
-    var notes = pattern.notes.slice(0, MAX_NOTES);
-    bytes.push(notes.length);
-    notes.forEach(function (n) {
-      bytes.push(
-        clamp(n.step, 0, STEPS - 1),
-        clamp(n.midi, 0, 127),
-        clamp(n.len || 1, 1, STEPS)
-      );
+    layers.forEach(function (layer) {
+      var flags = voiceIndex(layer.voice) & 0x0f;
+      if (layer.muted) flags |= 0x80;
+      if (layer.solo) flags |= 0x40;
+      var notes = layer.notes.slice(0, MAX_NOTES);
+      bytes.push(flags, notes.length);
+      notes.forEach(function (n) {
+        bytes.push(
+          clamp(n.step, 0, steps - 1),
+          clamp(n.midi, 0, 127),
+          clamp(n.len || 1, 1, steps)
+        );
+      });
     });
 
     return toBase64Url(bytes);
+  }
+
+  /* Version 1 was a single 16-step bar with one keys track. Those links
+     are still out in the world, so they're read and widened into the
+     current shape rather than rejected: the old bar lands in the first
+     half of the loop, and its notes become layer one. */
+  function decodeV1(b) {
+    var OLD_STEPS = 16, OLD_HEADER = 17;
+    if (b.length < OLD_HEADER) return null;
+
+    var p = emptyPattern();
+    p.bpm = clamp(b[2] + 40, BPM_MIN, BPM_MAX);
+    p.layers[0].voice = (VOICES[b[3]] || VOICES[0]).id;
+
+    for (var l = 0; l < LANES.length; l++) {
+      var lo = b[4 + l * 2], hi = b[5 + l * 2];
+      for (var s = 0; s < 8; s++) p.drums[l][s] = !!(lo & (1 << s));
+      for (var s2 = 0; s2 < 8; s2++) p.drums[l][s2 + 8] = !!(hi & (1 << s2));
+    }
+
+    var count = b[16];
+    if (b.length < OLD_HEADER + count * 3) return null;
+    for (var i = 0; i < count; i++) {
+      var o = OLD_HEADER + i * 3;
+      p.layers[0].notes.push({
+        step: clamp(b[o], 0, OLD_STEPS - 1),
+        midi: clamp(b[o + 1], 0, 127),
+        len: clamp(b[o + 2], 1, OLD_STEPS),
+        velocity: 100
+      });
+    }
+    return p;
   }
 
   /* Returns a pattern, or null if the code is damaged. Callers show a
@@ -905,29 +1271,45 @@
     try {
       if (!code) return null;
       var b = fromBase64Url(code);
-      if (b.length < HEADER_BYTES) return null;
-      if (b[0] !== MAGIC || b[1] !== VERSION) return null;
+      if (b.length < 5 || b[0] !== MAGIC) return null;
+      if (b[1] === 1) return decodeV1(b);
+      if (b[1] !== VERSION) return null;
+
+      var steps = b[3] || STEPS;
+      var layerCount = clamp(b[4], 0, MAX_LAYERS);
+      var laneBytes = bytesPerLane(steps);
+      var offset = 5;
+      if (b.length < offset + LANES.length * laneBytes) return null;
 
       var p = emptyPattern();
       p.bpm = clamp(b[2] + 40, BPM_MIN, BPM_MAX);
-      p.voice = (VOICES[b[3]] || VOICES[0]).id;
 
       for (var l = 0; l < LANES.length; l++) {
-        var lo = b[4 + l * 2], hi = b[5 + l * 2];
-        for (var s = 0; s < 8; s++)  { p.drums[l][s]     = !!(lo & (1 << s)); }
-        for (var s2 = 0; s2 < 8; s2++) { p.drums[l][s2 + 8] = !!(hi & (1 << s2)); }
+        var lane = unpackBits(b, offset, Math.min(steps, STEPS));
+        for (var s = 0; s < STEPS; s++) p.drums[l][s] = !!lane[s];
+        offset += laneBytes;
       }
 
-      var count = b[16];
-      if (b.length < HEADER_BYTES + count * 3) return null;
-      for (var i = 0; i < count; i++) {
-        var o = HEADER_BYTES + i * 3;
-        p.notes.push({
-          step: clamp(b[o], 0, STEPS - 1),
-          midi: clamp(b[o + 1], 0, 127),
-          len:  clamp(b[o + 2], 1, STEPS),
-          velocity: 100
-        });
+      for (var li = 0; li < layerCount; li++) {
+        if (offset + 2 > b.length) return null;
+        var flags = b[offset++];
+        var count = b[offset++];
+        if (offset + count * 3 > b.length) return null;
+
+        var layer = p.layers[li] || (p.layers[li] = emptyLayer());
+        layer.voice = (VOICES[flags & 0x0f] || VOICES[0]).id;
+        layer.muted = !!(flags & 0x80);
+        layer.solo = !!(flags & 0x40);
+        layer.notes = [];
+        for (var n = 0; n < count; n++) {
+          layer.notes.push({
+            step: clamp(b[offset], 0, STEPS - 1),
+            midi: clamp(b[offset + 1], 0, 127),
+            len: clamp(b[offset + 2], 1, STEPS),
+            velocity: 100
+          });
+          offset += 3;
+        }
       }
       return p;
     } catch (e) {
@@ -935,12 +1317,99 @@
     }
   }
 
+  /* ---------------------------------------------------------------
+     COPY / PASTE
+     Pure functions over a pattern, so they are easy to reason about
+     and easy to test. `scope` is 'all', 'drums' or 'keys'.
+     --------------------------------------------------------------- */
+
+  function copyRange(pattern, fromStep, length, scope) {
+    scope = scope || 'all';
+    var clip = { length: length, scope: scope, drums: null, sample: null, layers: null };
+
+    if (scope !== 'keys') {
+      clip.drums = pattern.drums.map(function (row) {
+        return row.slice(fromStep, fromStep + length);
+      });
+      clip.sample = (pattern.sample || []).slice(fromStep, fromStep + length);
+    }
+    if (scope !== 'drums') {
+      clip.layers = pattern.layers.map(function (layer) {
+        return layer.notes
+          .filter(function (n) { return n.step >= fromStep && n.step < fromStep + length; })
+          .map(function (n) {
+            return { step: n.step - fromStep, midi: n.midi, len: n.len, velocity: n.velocity };
+          });
+      });
+    }
+    return clip;
+  }
+
+  /* Returns a new pattern with the clip written in at `atStep`. Whatever
+     was already in the target range is replaced rather than layered on
+     top, so pasting twice gives the same result as pasting once. */
+  function pasteRange(pattern, clip, atStep) {
+    if (!clip) return pattern;
+    var len = Math.min(clip.length, STEPS - atStep);
+    if (len <= 0) return pattern;
+
+    var next = {
+      bpm: pattern.bpm,
+      drums: pattern.drums.map(function (row) { return row.slice(); }),
+      sample: (pattern.sample || blankSteps()).slice(),
+      layers: pattern.layers.map(function (layer) {
+        return {
+          voice: layer.voice, muted: layer.muted, solo: layer.solo,
+          notes: layer.notes.slice()
+        };
+      })
+    };
+
+    if (clip.drums) {
+      for (var l = 0; l < next.drums.length; l++) {
+        for (var s = 0; s < len; s++) next.drums[l][atStep + s] = !!clip.drums[l][s];
+      }
+      for (var s2 = 0; s2 < len; s2++) {
+        next.sample[atStep + s2] = !!(clip.sample && clip.sample[s2]);
+      }
+    }
+
+    if (clip.layers) {
+      next.layers.forEach(function (layer, i) {
+        // Clear the target window first, then drop the copied notes in.
+        layer.notes = layer.notes.filter(function (n) {
+          return n.step < atStep || n.step >= atStep + len;
+        });
+        (clip.layers[i] || []).forEach(function (n) {
+          if (layer.notes.length >= MAX_NOTES) return;
+          layer.notes.push({
+            step: atStep + n.step, midi: n.midi, len: n.len, velocity: n.velocity || 100
+          });
+        });
+      });
+    }
+    return next;
+  }
+
+  /* The common case: make the back half match the front half. */
+  function duplicateFirstHalf(pattern) {
+    var half = STEPS / 2;
+    return pasteRange(pattern, copyRange(pattern, 0, half, 'all'), half);
+  }
+
   function isEmptyPattern(p) {
-    if (p.notes.length) return false;
+    if ((p.layers || []).some(function (ly) { return ly.notes.length; })) return false;
     for (var l = 0; l < p.drums.length; l++) {
       for (var s = 0; s < STEPS; s++) { if (p.drums[l][s]) return false; }
     }
+    // A sample arrangement counts as work, even though the audio behind
+    // it never leaves this machine.
+    for (var s2 = 0; s2 < STEPS; s2++) { if (p.sample && p.sample[s2]) return false; }
     return true;
+  }
+
+  function countNotes(p) {
+    return (p.layers || []).reduce(function (n, ly) { return n + ly.notes.length; }, 0);
   }
 
   /* ------------------------------------------------------------- */
@@ -948,14 +1417,19 @@
   window.BDJam = {
     // shape
     STEPS: STEPS,
+    STEPS_PER_BEAT: STEPS_PER_BEAT,
+    MAX_LAYERS: MAX_LAYERS,
     LANES: LANES,
     VOICES: VOICES,
     BPM_MIN: BPM_MIN,
     BPM_MAX: BPM_MAX,
     BPM_DEFAULT: BPM_DEFAULT,
     MAX_NOTES: MAX_NOTES,
+    MAX_SAMPLE_SECONDS: MAX_SAMPLE_SECONDS,
     emptyPattern: emptyPattern,
+    emptyLayer: emptyLayer,
     isEmptyPattern: isEmptyPattern,
+    countNotes: countNotes,
 
     // audio
     ensureAudio: ensureAudio,
@@ -967,6 +1441,16 @@
     playDrum: playDrum,
     playClick: playClick,
 
+    // the microphone sample pad
+    micBlockedReason: micBlockedReason,
+    recordSample: recordSample,
+    stopSampleRecording: stopSampleRecording,
+    isRecordingSample: isRecordingSample,
+    playSample: playSample,
+    hasSample: hasSample,
+    clearSample: clearSample,
+    sampleInfo: sampleInfo,
+
     // transport
     start: start,
     stop: stop,
@@ -974,6 +1458,11 @@
     currentPlayStep: currentPlayStep,
     liveStep: liveStep,
     stepDuration: stepDuration,
+
+    // arranging
+    copyRange: copyRange,
+    pasteRange: pasteRange,
+    duplicateFirstHalf: duplicateFirstHalf,
 
     // export & sharing
     buildMidi: buildMidi,
