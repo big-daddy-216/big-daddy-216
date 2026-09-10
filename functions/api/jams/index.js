@@ -38,7 +38,9 @@ export function present(row, env) {
     depth: row.depth,
     remix_count: row.remix_count,
     status: row.status,
-    sample: row.sample_key
+    // Without MEDIA_BASE_URL the address would read "undefined/…", which
+    // fails as a broken audio file rather than as missing configuration.
+    sample: (row.sample_key && env.MEDIA_BASE_URL)
       ? { url: env.MEDIA_BASE_URL + '/' + row.sample_key, seconds: row.sample_secs }
       : null
   };
@@ -217,6 +219,13 @@ export async function onRequestPost({ request, env, waitUntil }) {
       bytes: parent.sample_bytes, mime: parent.sample_mime
     };
   } else if (file && typeof file.arrayBuffer === 'function' && file.size > 0) {
+    /* The bucket is the last piece of setup and the easiest to be without.
+       Say so plainly instead of throwing a 500 at somebody who just
+       recorded something. The rest of the jam would publish fine. */
+    if (!env.MEDIA) {
+      return fail(503, 'no_storage',
+        "Recordings can't be stored yet — publish without the sample ticked, or ask the band to finish setting things up.");
+    }
     if (file.size > maxBytes) {
       return fail(413, 'payload_too_large', 'That recording is bigger than we can take.');
     }
