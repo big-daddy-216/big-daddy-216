@@ -293,9 +293,11 @@
 
         <div className="jam-transport-group">
           <span className="jam-tempo-unit">
-            {props.recording
-              ? 'Recording into ' + props.layerName
-              : 'Playing ' + props.layerName}
+            {props.previewTitle
+              ? 'Hearing “' + props.previewTitle + '”'
+              : props.recording
+                ? 'Recording into ' + props.layerName
+                : 'Playing ' + props.layerName}
           </span>
         </div>
       </div>
@@ -902,7 +904,8 @@
           {props.banner}
 
           <Card padding="clamp(20px,3vw,36px)">
-            <Transport {...props} layerName={selectedName} />
+            <Transport {...props} playing={props.playing || !!props.previewTitle}
+                       layerName={selectedName} />
 
             <div style={{ marginTop: 'var(--sp-5)' }}>
               <LayerStrip layers={props.pattern.layers}
@@ -1865,7 +1868,13 @@
     }, []);
 
     const togglePlay = React.useCallback(() => {
-      if (E.isPlaying() && E.transportOwner() === 'studio') {
+      if (E.isPlaying() && E.transportOwner() !== 'studio') {
+        // A board preview ("Hear the original", or a card on the wall)
+        // is what's sounding. Stop means stop that, not start the studio.
+        claimTransport();
+        return;
+      }
+      if (E.isPlaying()) {
         E.stop();
         setPlaying(false);
         setRecording(false);
@@ -2424,6 +2433,10 @@
           pattern={pattern}
           bpm={pattern.bpm}
           playing={playing}
+          previewTitle={previewId === null ? null
+            : ((board.jams.find((j) => j.id === previewId) || {}).title
+               || (remixParent && remixParent.id === previewId ? remixParent.title : null)
+               || 'the original')}
           recording={recording}
           metronome={metronome}
           uiStep={uiStep}
