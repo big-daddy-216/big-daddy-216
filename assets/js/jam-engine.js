@@ -70,8 +70,20 @@
     return (n === 16 || n === 32) ? n : STEPS_DEFAULT;
   }
 
+  /* Keyboard voices are a good deal hotter than the drums, so a layer
+     starts well below full and the slider goes up from there. */
+  var LAYER_VOLUME_DEFAULT = 0.6;
+
   function emptyLayer(voiceId) {
-    return { voice: voiceId || VOICES[0].id, muted: false, solo: false, notes: [] };
+    return {
+      voice: voiceId || VOICES[0].id, muted: false, solo: false,
+      volume: LAYER_VOLUME_DEFAULT, notes: []
+    };
+  }
+
+  function layerLevel(layer) {
+    var v = layer && layer.volume;
+    return (typeof v === 'number' && isFinite(v)) ? clamp(v, 0, 1) : LAYER_VOLUME_DEFAULT;
   }
 
   /* A loop is: a tempo, six drum lanes, one lane for a recorded sample,
@@ -466,17 +478,19 @@
 
   function normVel(v) { return clamp((v == null ? 100 : v) / 127, 0.05, 1); }
 
-  /* A note of known length — what the sequencer plays. */
-  function playNote(voiceId, midi, when, dur, velocity) {
+  /* A note of known length — what the sequencer plays. `level` is the
+     layer's volume, 0–1, and simply scales the peak. */
+  function playNote(voiceId, midi, when, dur, velocity, level) {
     if (!ensureAudio()) return 0;
     when = Math.max(when || now(), now());
     dur = Math.max(dur || 0.25, 0.05);
+    var lvl = (typeof level === 'number') ? clamp(level, 0, 1) : 1;
 
     var out = ctx.createGain();
     out.connect(master);
 
     var tOff = when + dur;
-    var v = buildVoice(voiceId, out, midiToHz(midi), when, tOff, normVel(velocity));
+    var v = buildVoice(voiceId, out, midiToHz(midi), when, tOff, normVel(velocity) * lvl);
     var ends = shape(out.gain, when, tOff, v.peak, v.attack, v.release);
 
     // Stopping only after the envelope has reached zero — cutting a
@@ -489,16 +503,17 @@
 
   /* A note held by a finger, whose length nobody knows yet. Returns a
      handle to hand back to noteOff(). */
-  function noteOn(voiceId, midi, velocity) {
+  function noteOn(voiceId, midi, velocity, level) {
     if (!ensureAudio()) return null;
     var when = now();
+    var lvl = (typeof level === 'number') ? clamp(level, 0, 1) : 1;
 
     var out = ctx.createGain();
     out.connect(master);
 
     // A nominal half-second only so the filter sweep has somewhere to
     // go; the real length is however long the key stays down.
-    var v = buildVoice(voiceId, out, midiToHz(midi), when, when + 0.5, normVel(velocity));
+    var v = buildVoice(voiceId, out, midiToHz(midi), when, when + 0.5, normVel(velocity) * lvl);
     attackOnly(out.gain, when, v.peak, v.attack);
     v.oscs.forEach(function (o) { o.start(when); });
 
@@ -665,6 +680,335 @@
     var k = slotName(slot);
     samples[k] = null;
     sampleBlobs[k] = null;
+    sampleEdits[k] = defaultSampleEdit();
+    reversedCache[k] = null;
+  }
+
+  /* ---------------------------------------------------------------
+     SHAPING THE SAMPLE
+
+     A raw four seconds of "hey" isn't much of an instrument. These
+     controls turn it into one: trim it to the bit that matters, pitch
+     it, filter it, drive it, throw an echo on it, flip it backwards.
+
+     Every control is non-destructive — the recording underneath is
+     never touched, the settings are applied on the way out — so anyone
+     can wind a knob back to zero and have their original back. Only
+     "bake" (below) commits them, and it says so.
+     --------------------------------------------------------------- */
+
+  function defaultSampleEdit() {
+    return {
+      start: 0,          // seconds into the recording
+      end: null,         // seconds; null means "to the end"
+      reverse: false,
+      gain: 1,           // 0–2, 1 is as recorded
+      pitch: 0,          // semitones, -12..+12
+      highpass: 0,       // Hz; 0 (or anything under 20) means off
+      lowpass: 20000,    // Hz; at or above 20000 means off
+      resonance: 0.7,    // Q for both filters, 0.5–12
+      drive: 0,          // 0–1
+      echo: 0,           // 0–1, how much goes to the echo bus
+      echoTime: 0.28     // seconds between repeats
+    };
+  }
+
+  var sampleEdits = { studio: defaultSampleEdit(), preview: defaultSampleEdit() };
+  var reversedCache = { studio: null, preview: null };
+
+  function getSampleEdit(slot) {
+    var k = slotName(slot);
+    var e = sampleEdits[k];
+    return {
+      start: e.start, end: e.end, reverse: e.reverse, gain: e.gain, pitch: e.pitch,
+      highpass: e.highpass, lowpass: e.lowpass, resonance: e.resonance,
+      drive: e.drive, echo: e.echo, echoTime: e.echoTime
+    };
+  }
+
+  /* Merge `changes` into the slot's settings, keeping every value in a
+     range that can't produce silence, screech, or an exception. */
+  function setSampleEdit(slot, changes) {
+    var k = slotName(slot);
+    var e = sampleEdits[k];
+    var buf = samples[k];
+    var dur = buf ? buf.duration : MAX_SAMPLE_SECONDS;
+    var c = changes || {};
+
+    if ('start' in c) e.start = clamp(Number(c.start) || 0, 0, dur);
+    if ('end' in c) e.end = (c.end == null) ? null : clamp(Number(c.end), 0, dur);
+    // A region shorter than 20ms is a click, not a sample.
+    if (e.end != null && e.end - e.start < 0.02) {
+      if ('start' in c) e.start = Math.max(0, e.end - 0.02);
+      else e.end = Math.min(dur, e.start + 0.02);
+    }
+    if ('reverse' in c) e.reverse = !!c.reverse;
+    if ('gain' in c) e.gain = clamp(Number(c.gain) || 0, 0, 2);
+    if ('pitch' in c) e.pitch = clamp(Math.round(Number(c.pitch) || 0), -12, 12);
+    if ('highpass' in c) e.highpass = clamp(Number(c.highpass) || 0, 0, 8000);
+    if ('lowpass' in c) e.lowpass = clamp(Number(c.lowpass) || 20000, 200, 20000);
+    if ('resonance' in c) e.resonance = clamp(Number(c.resonance) || 0.7, 0.5, 12);
+    if ('drive' in c) e.drive = clamp(Number(c.drive) || 0, 0, 1);
+    if ('echo' in c) e.echo = clamp(Number(c.echo) || 0, 0, 1);
+    if ('echoTime' in c) e.echoTime = clamp(Number(c.echoTime) || 0.28, 0.05, 1);
+    return getSampleEdit(k);
+  }
+
+  function resetSampleEdit(slot) {
+    var k = slotName(slot);
+    sampleEdits[k] = defaultSampleEdit();
+    return getSampleEdit(k);
+  }
+
+  /* True if any control has been moved off its default. */
+  function sampleIsEdited(slot) {
+    var e = sampleEdits[slotName(slot)];
+    var d = defaultSampleEdit();
+    return e.start !== d.start || e.end !== d.end || e.reverse !== d.reverse ||
+      e.gain !== d.gain || e.pitch !== d.pitch || e.highpass !== d.highpass ||
+      e.lowpass !== d.lowpass || e.resonance !== d.resonance ||
+      e.drive !== d.drive || e.echo !== d.echo;
+  }
+
+  /* Peak amplitude per bucket across the whole recording, for drawing
+     a waveform. Mono-summed. Cheap enough to call on every resize. */
+  function sampleWaveform(slot, buckets) {
+    var buf = samples[slotName(slot)];
+    if (!buf) return null;
+    var n = Math.max(8, Math.min(buckets || 200, 2000));
+    var out = new Float32Array(n);
+    var chans = buf.numberOfChannels;
+    var len = buf.length;
+    var per = len / n;
+    for (var c = 0; c < chans; c++) {
+      var data = buf.getChannelData(c);
+      for (var b = 0; b < n; b++) {
+        var from = Math.floor(b * per), to = Math.min(len, Math.floor((b + 1) * per));
+        var peak = 0;
+        for (var i = from; i < to; i++) {
+          var a = data[i]; if (a < 0) a = -a;
+          if (a > peak) peak = a;
+        }
+        if (peak > out[b]) out[b] = peak;
+      }
+    }
+    return out;
+  }
+
+  /* The recording played backwards. Built once per recording and kept,
+     so flipping reverse on and off costs nothing after the first time. */
+  function reversedBuffer(k, audioCtx) {
+    var buf = samples[k];
+    if (!buf) return null;
+    if (reversedCache[k] && reversedCache[k].source === buf && reversedCache[k].ctx === audioCtx) {
+      return reversedCache[k].buffer;
+    }
+    var out = audioCtx.createBuffer(buf.numberOfChannels, buf.length, buf.sampleRate);
+    for (var c = 0; c < buf.numberOfChannels; c++) {
+      var src = buf.getChannelData(c), dst = out.getChannelData(c), n = buf.length;
+      for (var i = 0; i < n; i++) dst[i] = src[n - 1 - i];
+    }
+    reversedCache[k] = { source: buf, ctx: audioCtx, buffer: out };
+    return out;
+  }
+
+  /* Where the trimmed region sits, in seconds, allowing for reverse —
+     when the recording is flipped, "the first second" of what you hear
+     is the last second of what was recorded. */
+  function sampleRegion(k) {
+    var buf = samples[k];
+    var e = sampleEdits[k];
+    var dur = buf ? buf.duration : 0;
+    var start = clamp(e.start, 0, dur);
+    var end = clamp(e.end == null ? dur : e.end, start, dur);
+    if (e.reverse) return { offset: dur - end, length: end - start };
+    return { offset: start, length: end - start };
+  }
+
+  var DRIVE_CURVE = null;
+
+  /* One echo bus per slot, shared by every hit: a delay feeding back
+     into itself, sent to the master. Building a fresh delay per hit
+     would leave dozens of tails ringing in the graph. */
+  var echoBuses = { studio: null, preview: null };
+
+  function echoBus(k) {
+    if (echoBuses[k]) return echoBuses[k];
+    var delay = ctx.createDelay(1.2);
+    var feedback = ctx.createGain();
+    var tone = ctx.createBiquadFilter();
+    tone.type = 'lowpass';
+    tone.frequency.value = 3200;          // repeats get darker, like tape
+    var send = ctx.createGain();
+    send.gain.value = 1;
+    send.connect(delay);
+    delay.connect(tone);
+    tone.connect(feedback);
+    feedback.connect(delay);
+    tone.connect(master);
+    echoBuses[k] = { input: send, delay: delay, feedback: feedback };
+    return echoBuses[k];
+  }
+
+  /* Wire the effects for one playback, on whichever context is handed
+     in — the live one for the studio, an offline one for baking. The
+     same function builds both, which is what guarantees that what you
+     bake is what you heard.
+
+     Returns the node the source should feed, and a list of everything
+     created so it can be released afterwards. */
+  function buildSampleChain(audioCtx, destination, e, echoInput) {
+    var nodes = [];
+    var head = null, tail = null;
+    function link(node) {
+      if (!head) head = node; else tail.connect(node);
+      tail = node;
+      nodes.push(node);
+    }
+
+    if (e.highpass >= 20) {
+      var hp = audioCtx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = e.highpass;
+      hp.Q.value = e.resonance;
+      link(hp);
+    }
+    if (e.lowpass < 20000) {
+      var lp = audioCtx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = e.lowpass;
+      lp.Q.value = e.resonance;
+      link(lp);
+    }
+    if (e.drive > 0) {
+      if (!DRIVE_CURVE) DRIVE_CURVE = fuzzCurve(6);
+      var pre = audioCtx.createGain();
+      pre.gain.value = 1 + e.drive * 9;   // 1x clean up to 10x slammed
+      var shaper = audioCtx.createWaveShaper();
+      shaper.curve = DRIVE_CURVE;
+      shaper.oversample = '4x';
+      var post = audioCtx.createGain();
+      post.gain.value = 1 / (1 + e.drive * 2.2);   // keep loudness in range
+      link(pre); link(shaper); link(post);
+    }
+
+    var out = audioCtx.createGain();
+    out.gain.value = e.gain;
+    link(out);
+    out.connect(destination);
+
+    if (e.echo > 0 && echoInput) {
+      var send = audioCtx.createGain();
+      send.gain.value = e.echo * 0.8;
+      out.connect(send);
+      send.connect(echoInput);
+      nodes.push(send);
+    }
+    return { input: head, output: out, nodes: nodes };
+  }
+
+  function bumpEcho(k, e) {
+    if (e.echo <= 0) return null;
+    var bus = echoBus(k);
+    bus.delay.delayTime.setTargetAtTime(e.echoTime, now(), 0.02);
+    bus.feedback.gain.setTargetAtTime(0.25 + e.echo * 0.45, now(), 0.02);
+    return bus.input;
+  }
+
+  /* Render the current settings into a fresh recording, and encode it
+     as a WAV for uploading. Runs offline, so it's silent and quick. The
+     result replaces the slot's recording and clears the settings — the
+     edits are now simply what the sample is.
+
+     Mono at 32 kHz keeps a full four seconds under the board's upload
+     cap, and a microphone stab loses nothing audible in the process. */
+  function bakeSample(slot) {
+    var k = slotName(slot);
+    var buf = samples[k];
+    if (!buf) return Promise.reject(new Error('no-sample'));
+    if (!ensureAudio()) return Promise.reject(new Error('unsupported'));
+
+    var e = sampleEdits[k];
+    var region = sampleRegion(k);
+    var rate = Math.pow(2, e.pitch / 12);
+    var outSeconds = region.length / rate;
+    // Leave room for the echo to trail off, but not forever.
+    var tail = e.echo > 0 ? Math.min(1.5, e.echoTime * 4) : 0.05;
+    var RATE = 32000;
+    var frames = Math.max(1, Math.ceil((outSeconds + tail) * RATE));
+
+    var OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!OAC) return Promise.reject(new Error('unsupported'));
+    var off = new OAC(1, frames, RATE);
+
+    // Offline contexts get their own echo, since the live bus isn't theirs.
+    var echoIn = null;
+    if (e.echo > 0) {
+      var d = off.createDelay(1.2); d.delayTime.value = e.echoTime;
+      var fb = off.createGain(); fb.gain.value = 0.25 + e.echo * 0.45;
+      var tn = off.createBiquadFilter(); tn.type = 'lowpass'; tn.frequency.value = 3200;
+      var inp = off.createGain();
+      inp.connect(d); d.connect(tn); tn.connect(fb); fb.connect(d); tn.connect(off.destination);
+      echoIn = inp;
+    }
+
+    var chain = buildSampleChain(off, off.destination, e, echoIn);
+    var src = off.createBufferSource();
+    src.buffer = e.reverse ? reversedBuffer(k, off) : cloneBufferTo(buf, off);
+    src.playbackRate.value = rate;
+    src.connect(chain.input);
+    src.start(0, region.offset, region.length);
+
+    return off.startRendering().then(function (rendered) {
+      var trimmed = trimSilence(rendered, off);
+      samples[k] = trimmed;
+      sampleBlobs[k] = encodeWav(trimmed);
+      sampleEdits[k] = defaultSampleEdit();
+      reversedCache[k] = null;
+      return sampleInfo(k);
+    });
+  }
+
+  /* An AudioBuffer belongs to the context that made it; copying is the
+     only way to hand one to an offline context. */
+  function cloneBufferTo(buf, audioCtx) {
+    var out = audioCtx.createBuffer(buf.numberOfChannels, buf.length, buf.sampleRate);
+    for (var c = 0; c < buf.numberOfChannels; c++) out.getChannelData(c).set(buf.getChannelData(c));
+    return out;
+  }
+
+  /* Lop dead air off the end of a render so a bake doesn't grow the
+     sample by its own echo tail every time. */
+  function trimSilence(buf, audioCtx) {
+    var data = buf.getChannelData(0);
+    var end = data.length;
+    while (end > 1 && Math.abs(data[end - 1]) < 0.002) end--;
+    end = Math.min(data.length, end + Math.floor(buf.sampleRate * 0.03));
+    if (end >= data.length) return buf;
+    var out = audioCtx.createBuffer(1, end, buf.sampleRate);
+    out.getChannelData(0).set(data.subarray(0, end));
+    return out;
+  }
+
+  /* 16-bit PCM WAV, mono. Forty-four bytes of header and then the
+     samples — every decoder on earth reads it. */
+  function encodeWav(buf) {
+    var data = buf.getChannelData(0);
+    var n = data.length;
+    var bytes = new ArrayBuffer(44 + n * 2);
+    var view = new DataView(bytes);
+    function str(o, s) { for (var i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); }
+    str(0, 'RIFF'); view.setUint32(4, 36 + n * 2, true); str(8, 'WAVE');
+    str(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true); view.setUint32(24, buf.sampleRate, true);
+    view.setUint32(28, buf.sampleRate * 2, true); view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true); str(36, 'data'); view.setUint32(40, n * 2, true);
+    var o = 44;
+    for (var i = 0; i < n; i++, o += 2) {
+      var v = Math.max(-1, Math.min(1, data[i]));
+      view.setInt16(o, v < 0 ? v * 0x8000 : v * 0x7fff, true);
+    }
+    return new Blob([bytes], { type: 'audio/wav' });
   }
 
   /* Which slot the sequencer and keyboard should sound. The board sets
@@ -909,29 +1253,36 @@
      currently active, so existing callers are unaffected. */
   function playSample(when, midi, velocity, slot) {
     if (!ensureAudio()) return 0;
-    var buffer = samples[slot ? slotName(slot) : activeSampleSlot];
+    var k = slot ? slotName(slot) : activeSampleSlot;
+    var buffer = samples[k];
     if (!buffer) return 0;
     when = Math.max(when || now(), now());
 
+    var e = sampleEdits[k];
+    var region = sampleRegion(k);
+    if (region.length <= 0) return 0;
+
     var src = ctx.createBufferSource();
-    src.buffer = buffer;
-    var rate = (midi == null) ? 1 : Math.pow(2, (midi - 60) / 12);
+    src.buffer = e.reverse ? reversedBuffer(k, ctx) : buffer;
+    // Keyboard pitch and the pitch control stack.
+    var rate = Math.pow(2, ((midi == null ? 60 : midi) - 60 + e.pitch) / 12);
     src.playbackRate.value = rate;
 
     var g = ctx.createGain();
     var vel = clamp((velocity == null ? 110 : velocity) / 127, 0.05, 1);
     g.gain.setValueAtTime(vel * 0.9, when);
 
+    var chain = buildSampleChain(ctx, master, e, bumpEcho(k, e));
     src.connect(g);
-    g.connect(master);
+    g.connect(chain.input);
 
-    var dur = buffer.duration / rate;
-    src.start(when);
+    var dur = region.length / rate;
+    src.start(when, region.offset, region.length);
     // A short fade stops the tail clicking when it's cut off.
     g.gain.setValueAtTime(vel * 0.9, when + Math.max(dur - 0.02, 0.01));
     g.gain.exponentialRampToValueAtTime(EPS, when + dur);
     src.stop(when + dur + 0.03);
-    releaseOnEnd(src, [g]);
+    releaseOnEnd(src, [g].concat(chain.nodes));
     return when + dur;
   }
 
@@ -1060,7 +1411,7 @@
       for (var i = 0; i < layer.notes.length; i++) {
         var n = layer.notes[i];
         if (n.step === step) {
-          playNote(layer.voice, n.midi, when, dur * n.len * 0.95, n.velocity || 100);
+          playNote(layer.voice, n.midi, when, dur * n.len * 0.95, n.velocity || 100, layerLevel(layer));
         }
       }
     });
@@ -1326,7 +1677,7 @@
      format grows later.
      --------------------------------------------------------------- */
 
-  var MAGIC = 0xbd, VERSION = 2;
+  var MAGIC = 0xbd, VERSION = 3;
 
   function toBase64Url(bytes) {
     var s = '';
@@ -1403,7 +1754,8 @@
       if (layer.muted) flags |= 0x80;
       if (layer.solo) flags |= 0x40;
       var notes = layer.notes.slice(0, MAX_NOTES);
-      bytes.push(flags, notes.length);
+      // Version 3 adds one byte per layer: its volume, 0–255.
+      bytes.push(flags, Math.round(layerLevel(layer) * 255), notes.length);
       notes.forEach(function (n) {
         bytes.push(
           clamp(n.step, 0, steps - 1),
@@ -1456,7 +1808,8 @@
       var b = fromBase64Url(code);
       if (b.length < 5 || b[0] !== MAGIC) return null;
       if (b[1] === 1) return decodeV1(b);
-      if (b[1] !== VERSION) return null;
+      var version = b[1];
+      if (version !== 2 && version !== VERSION) return null;
 
       var steps = (b[3] === 16 || b[3] === 32) ? b[3] : STEPS_DEFAULT;
       var layerCount = clamp(b[4], 0, MAX_LAYERS);
@@ -1474,8 +1827,10 @@
       }
 
       for (var li = 0; li < layerCount; li++) {
-        if (offset + 2 > b.length) return null;
+        if (offset + (version >= 3 ? 3 : 2) > b.length) return null;
         var flags = b[offset++];
+        // Version 2 had no volume byte; those loops get the default.
+        var volume = (version >= 3) ? (b[offset++] / 255) : LAYER_VOLUME_DEFAULT;
         var count = b[offset++];
         if (offset + count * 3 > b.length) return null;
 
@@ -1483,6 +1838,7 @@
         layer.voice = (VOICES[flags & 0x0f] || VOICES[0]).id;
         layer.muted = !!(flags & 0x80);
         layer.solo = !!(flags & 0x40);
+        layer.volume = clamp(volume, 0, 1);
         layer.notes = [];
         for (var n = 0; n < count; n++) {
           layer.notes.push({
@@ -1545,7 +1901,7 @@
       layers: pattern.layers.map(function (layer) {
         return {
           voice: layer.voice, muted: layer.muted, solo: layer.solo,
-          notes: layer.notes.slice()
+          volume: layerLevel(layer), notes: layer.notes.slice()
         };
       })
     };
@@ -1615,6 +1971,7 @@
       layers: pattern.layers.map(function (layer) {
         return {
           voice: layer.voice, muted: layer.muted, solo: layer.solo,
+          volume: layerLevel(layer),
           notes: layer.notes
             .filter(function (n) { return n.step < nextSteps; })
             .map(function (n) {
@@ -1691,6 +2048,15 @@
     isRecordingSample: isRecordingSample,
     playSample: playSample,
     hasSample: hasSample,
+    // shaping the sample
+    getSampleEdit: getSampleEdit,
+    setSampleEdit: setSampleEdit,
+    resetSampleEdit: resetSampleEdit,
+    sampleIsEdited: sampleIsEdited,
+    sampleWaveform: sampleWaveform,
+    bakeSample: bakeSample,
+    LAYER_VOLUME_DEFAULT: LAYER_VOLUME_DEFAULT,
+    layerLevel: layerLevel,
     clearSample: clearSample,
     sampleInfo: sampleInfo,
     sampleBlob: sampleBlob,

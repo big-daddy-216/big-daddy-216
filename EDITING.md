@@ -212,6 +212,20 @@ so rename those if you'd rather read something else.
 Visitors can record up to four seconds with their own microphone and lay it
 into the grid, or play it pitched across the keyboard.
 
+Once there's a recording, an **editor** opens under it: the waveform, with
+draggable ends to cut it down to the part that matters, and controls for
+pitch, low-pass, high-pass, resonance, drive, echo, volume and reverse. All of
+it is live in the loop the moment it's touched, and none of it changes the
+recording underneath — **Reset** puts everything back. **Set as cue** bakes the
+cut and the effects into a fresh recording (rendered offline as a 32 kHz mono
+WAV, which keeps four seconds under the board's 400 KB upload cap). Publishing
+with unsaved edits bakes them first, so what the board hears is what the
+visitor heard.
+
+Every keyboard layer has a **volume slider**. Layers start at 60% because the
+synth voices run a good deal hotter than the drums. The setting travels in the
+loop code (format 3); loops published before it existed open at the default.
+
 Two things are true of it, and the page says both out loud:
 
 - **The mic is only ever opened by pressing the record button**, never on page

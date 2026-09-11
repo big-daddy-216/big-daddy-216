@@ -310,7 +310,7 @@
      which is the whole point: lay something down, hear it come round,
      riff over the top of it.
      ================================================================= */
-  function LayerStrip({ layers, selected, onSelect, onVoice, onMute, onSolo, onClear }) {
+  function LayerStrip({ layers, selected, onSelect, onVoice, onVolume, onMute, onSolo, onClear }) {
     const anySolo = layers.some((l) => l.solo);
     return (
       <div className="jam-layers">
@@ -337,6 +337,15 @@
                   <option key={v.id} value={v.id}>{v.label}</option>
                 ))}
               </select>
+
+              <label className="jam-layer-vol" onClick={(e) => e.stopPropagation()}>
+                <span className="jam-tempo-unit">Vol</span>
+                <input type="range" min="0" max="1" step="0.01"
+                       value={E.layerLevel(layer)}
+                       aria-label={'Volume for layer ' + (i + 1)}
+                       onChange={(e) => onVolume(i, Number(e.target.value))} />
+                <span className="jam-layer-count">{Math.round(E.layerLevel(layer) * 100)}</span>
+              </label>
 
               <div className="jam-layer-btns">
                 <button type="button" className="jam-mini" data-on={layer.muted}
@@ -455,7 +464,224 @@
     empty: "That came back silent — nothing was captured."
   };
 
-  function SamplePad({ state, onRecord, onStop, onPlay, onClear, pitched, onPitched }) {
+  /* =================================================================
+     SAMPLE EDITOR — turn four seconds of "hey" into an instrument.
+
+     The waveform shows the whole recording; drag the handles (or drag
+     across it) to choose the bit that plays. The controls underneath
+     shape the sound. None of it touches the recording until "Set as
+     cue", which bakes the cut and the effects into a new sample — and
+     that's also what gets uploaded if the jam is published, so what
+     the board hears is what the visitor heard.
+     ================================================================= */
+  const EDIT_CONTROLS = [
+    { key: 'pitch',     label: 'Pitch',    min: -12,  max: 12,    step: 1,    fmt: (v) => (v > 0 ? '+' : '') + v + ' st' },
+    { key: 'lowpass',   label: 'Low-pass', min: 200,  max: 20000, step: 50,   fmt: (v) => v >= 20000 ? 'off' : (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v + ' Hz'), log: true },
+    { key: 'highpass',  label: 'High-pass',min: 0,    max: 8000,  step: 20,   fmt: (v) => v < 20 ? 'off' : (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v + ' Hz'), log: true },
+    { key: 'resonance', label: 'Resonance',min: 0.5,  max: 12,    step: 0.1,  fmt: (v) => v.toFixed(1) },
+    { key: 'drive',     label: 'Drive',    min: 0,    max: 1,     step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
+    { key: 'echo',      label: 'Echo',     min: 0,    max: 1,     step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
+    { key: 'echoTime',  label: 'Echo time',min: 0.05, max: 1,     step: 0.01, fmt: (v) => Math.round(v * 1000) + ' ms' },
+    { key: 'gain',      label: 'Volume',   min: 0,    max: 2,     step: 0.01, fmt: (v) => Math.round(v * 100) + '%' }
+  ];
+
+  /* Frequency sliders feel wrong on a straight scale — the whole
+     musical range is crammed into the first tenth. These map the
+     slider's 0–1 travel onto the control's range logarithmically. */
+  function toSlider(ctl, v) {
+    if (!ctl.log) return v;
+    const lo = Math.max(ctl.min, 20), hi = ctl.max;
+    if (v <= lo) return 0;
+    return Math.log(v / lo) / Math.log(hi / lo);
+  }
+  function fromSlider(ctl, t) {
+    if (!ctl.log) return t;
+    const lo = Math.max(ctl.min, 20), hi = ctl.max;
+    const v = lo * Math.pow(hi / lo, t);
+    return t <= 0 ? ctl.min : v;
+  }
+
+  function SampleEditor({ version, onPlay, onBaked }) {
+    const canvasRef = React.useRef(null);
+    const [edit, setEditState] = React.useState(() => E.getSampleEdit('studio'));
+    const [dragging, setDragging] = React.useState(null);   // drives the cursor / border only
+    /* The drag logic reads this ref, not the state above: a pointermove
+       can arrive before React has re-rendered after pointerdown, and
+       state would still say "not dragging" — losing the first moves of
+       a fast drag. The ref is right the instant it's set. */
+    const dragRef = React.useRef(null);
+    const [baking, setBaking] = React.useState(false);
+    const [, force] = React.useState(0);
+
+    const info = E.sampleInfo('studio') || { seconds: 0 };
+    const duration = info.seconds || 0;
+    const start = edit.start;
+    const end = edit.end == null ? duration : edit.end;
+
+    // A new recording (version bump) means fresh settings.
+    React.useEffect(() => { setEditState(E.getSampleEdit('studio')); }, [version]);
+
+    const apply = (changes) => setEditState(E.setSampleEdit('studio', changes));
+
+    /* --- drawing --------------------------------------------------- */
+    React.useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return undefined;
+      const draw = () => {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const W = Math.max(1, Math.round(rect.width * dpr));
+        const H = Math.max(1, Math.round(rect.height * dpr));
+        if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+        const g = canvas.getContext('2d');
+        const peaks = E.sampleWaveform('studio', Math.floor(rect.width));
+        g.clearRect(0, 0, W, H);
+        if (!peaks) return;
+
+        const css = getComputedStyle(document.documentElement);
+        const bone = css.getPropertyValue('--bone-400').trim() || '#8A8475';
+        const ember = css.getPropertyValue('--ember-500').trim() || '#F08A1D';
+        const dim = css.getPropertyValue('--stage-600').trim() || '#232B3B';
+
+        const x0 = (duration ? start / duration : 0) * W;
+        const x1 = (duration ? end / duration : 1) * W;
+
+        // The kept region, lit; the rest, dimmed.
+        g.fillStyle = 'rgba(240,138,29,0.10)';
+        g.fillRect(x0, 0, x1 - x0, H);
+
+        const mid = H / 2;
+        const n = peaks.length;
+        for (let i = 0; i < n; i++) {
+          const px = (i / n) * W;
+          const inside = px >= x0 && px <= x1;
+          const h = Math.max(1, peaks[i] * (H * 0.92));
+          g.fillStyle = inside ? ember : dim;
+          g.fillRect(px, mid - h / 2, Math.max(1, W / n - 0.5), h);
+        }
+
+        // Handles.
+        g.fillStyle = bone;
+        g.fillRect(x0 - 1 * dpr, 0, 2 * dpr, H);
+        g.fillRect(x1 - 1 * dpr, 0, 2 * dpr, H);
+      };
+      draw();
+      const ro = new ResizeObserver(draw);
+      ro.observe(canvas);
+      return () => ro.disconnect();
+    }, [version, start, end, duration]);
+
+    /* --- dragging the region ---------------------------------------- */
+    const timeAt = (e) => {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const t = ((e.clientX - rect.left) / rect.width) * duration;
+      return Math.max(0, Math.min(duration, t));
+    };
+
+    const beginDrag = (which) => { dragRef.current = which; setDragging(which); };
+    const onDown = (e) => {
+      e.preventDefault();
+      try { canvasRef.current.setPointerCapture(e.pointerId); } catch (err) {}
+      const t = timeAt(e);
+      const cur = E.getSampleEdit('studio');
+      const curEnd = cur.end == null ? duration : cur.end;
+      const px = duration ? canvasRef.current.getBoundingClientRect().width / duration : 1;
+      const grab = 10 / px;                                  // 10px of slack
+      if (Math.abs(t - cur.start) < grab) beginDrag('start');
+      else if (Math.abs(t - curEnd) < grab) beginDrag('end');
+      else { apply({ start: t, end: t + 0.02 }); beginDrag('end'); }
+    };
+    const onMove = (e) => {
+      const which = dragRef.current;
+      if (!which) return;
+      const t = timeAt(e);
+      // Always read the live values: state may be a render behind.
+      const cur = E.getSampleEdit('studio');
+      const curEnd = cur.end == null ? duration : cur.end;
+      if (which === 'start') apply({ start: Math.min(t, curEnd - 0.02) });
+      else apply({ end: Math.max(t, cur.start + 0.02) });
+    };
+    const onUp = () => { dragRef.current = null; setDragging(null); };
+
+    /* --- bake ------------------------------------------------------- */
+    const bake = () => {
+      setBaking(true);
+      E.bakeSample('studio').then((res) => {
+        setBaking(false);
+        setEditState(E.getSampleEdit('studio'));
+        onBaked(res);
+      }, () => setBaking(false));
+    };
+
+    const edited = E.sampleIsEdited('studio');
+    const fmtTime = (t) => t.toFixed(2) + 's';
+
+    return (
+      <div className="jam-editor">
+        <div className="jam-editor-head">
+          <span className="jam-tempo-unit">
+            Cut: {fmtTime(start)} – {fmtTime(end)} · {fmtTime(end - start)} of {fmtTime(duration)}
+          </span>
+          <span className="jam-editor-hint">drag the ends, or drag across to pick a new cut</span>
+        </div>
+
+        <canvas ref={canvasRef} className="jam-wave" data-dragging={!!dragging}
+                onPointerDown={onDown} onPointerMove={onMove}
+                onPointerUp={onUp} onPointerCancel={onUp}
+                aria-label="Waveform of your recording. Drag to choose the part that plays." />
+
+        <div className="jam-knobs">
+          {EDIT_CONTROLS.map((ctl) => {
+            const v = edit[ctl.key];
+            const sliderVal = ctl.log ? toSlider(ctl, v) : v;
+            return (
+              <label key={ctl.key} className="jam-knob">
+                <span className="jam-knob-name">{ctl.label}</span>
+                <input type="range"
+                       min={ctl.log ? 0 : ctl.min} max={ctl.log ? 1 : ctl.max}
+                       step={ctl.log ? 0.001 : ctl.step}
+                       value={sliderVal}
+                       aria-label={ctl.label}
+                       onChange={(e) => {
+                         const raw = Number(e.target.value);
+                         apply({ [ctl.key]: ctl.log ? fromSlider(ctl, raw) : raw });
+                       }} />
+                <span className="jam-knob-value">{ctl.fmt(v)}</span>
+              </label>
+            );
+          })}
+
+          <label className="jam-knob jam-knob-toggle">
+            <span className="jam-knob-name">Reverse</span>
+            <button type="button" className="jam-mini" data-on={edit.reverse}
+                    aria-pressed={edit.reverse}
+                    onClick={() => apply({ reverse: !edit.reverse })}>
+              {edit.reverse ? 'On' : 'Off'}
+            </button>
+          </label>
+        </div>
+
+        <div className="jam-editor-actions">
+          <Button size="sm" variant="ghost" onClick={onPlay}>Hear it</Button>
+          <Button size="sm" variant="ghost" disabled={!edited}
+                  onClick={() => setEditState(E.resetSampleEdit('studio'))}>
+            Reset
+          </Button>
+          <Button size="sm" variant={edited ? 'primary' : 'outline'} disabled={!edited || baking}
+                  onClick={bake} title="Bakes the cut and the effects into the sample">
+            {baking ? 'Baking…' : 'Set as cue'}
+          </Button>
+          <span className="jam-editor-hint">
+            {edited
+              ? 'Everything is live in the loop already. "Set as cue" makes it permanent — and it’s what gets published.'
+              : 'Wind a control, or drag on the waveform, and hear it in the loop straight away.'}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  function SamplePad({ state, onRecord, onStop, onPlay, onClear, onBaked, pitched, onPitched }) {
     return (
       <div className="jam-sample">
         <div className="jam-sample-main">
@@ -482,6 +708,10 @@
             </React.Fragment>
           )}
         </div>
+
+        {state.seconds != null && !state.recording && (
+          <SampleEditor version={state.version} onPlay={onPlay} onBaked={onBaked} />
+        )}
 
         <p className="jam-sample-note">
           {state.error
@@ -677,6 +907,7 @@
                           selected={props.selectedLayer}
                           onSelect={props.onSelectLayer}
                           onVoice={props.onLayerVoice}
+                          onVolume={props.onLayerVolume}
                           onMute={props.onLayerMute}
                           onSolo={props.onLayerSolo}
                           onClear={props.onLayerClear} />
@@ -712,6 +943,7 @@
                        onStop={props.onSampleStop}
                        onPlay={props.onSamplePlay}
                        onClear={props.onSampleClear}
+                       onBaked={props.onSampleBaked}
                        pitched={props.sampleKeyboard}
                        onPitched={props.onSampleKeyboard} />
 
@@ -1316,7 +1548,7 @@
 
   /* ---- putting one up --------------------------------------------- */
 
-  function PublishPanel({ pattern, parent, sampleState, mayPost, onPublished, onNeedSignIn }) {
+  function PublishPanel({ pattern, parent, sampleState, mayPost, onPublished, onNeedSignIn, onSampleBaked }) {
     const [title, setTitle] = React.useState('');
     const [author, setAuthor] = React.useState('');
     const [anon, setAnon] = React.useState(false);
@@ -1357,14 +1589,26 @@
           onNeedSignIn(true);
         }
 
-        const blob = (hasSample && includeSample) ? E.sampleBlob('studio') : null;
+        /* If the editor has unsaved settings, bake them first: the upload
+           must be the sound the visitor actually heard, not the raw take
+           underneath it. */
+        let blob = null;
+        let sampleSeconds = null;
+        if (hasSample && includeSample) {
+          if (E.sampleIsEdited('studio')) {
+            const baked = await E.bakeSample('studio');
+            if (onSampleBaked) onSampleBaked(baked);
+          }
+          blob = E.sampleBlob('studio');
+          sampleSeconds = (E.sampleInfo('studio') || {}).seconds || sampleState.seconds;
+        }
         const result = await API.publish({
           title: title.trim(),
           author: anon ? null : (author.trim() || null),
           note: note.trim() || null,
           loop: E.encodeLoop(pattern),
           parent_id: parent ? parent.id : null,
-          sample_seconds: hasSample && includeSample ? sampleState.seconds : null,
+          sample_seconds: sampleSeconds,
           /* A remix that isn't adding its own recording keeps the one it
              inherited, so the loop still sounds the way it did. */
           inherit_sample: !!(parent && parent.hasSample && !(hasSample && includeSample))
@@ -1546,7 +1790,7 @@
 
     // The microphone pad
     const [sampleState, setSampleState] = React.useState({
-      seconds: null, recording: false, error: null, countdown: 0
+      seconds: null, recording: false, error: null, countdown: 0, version: 0
     });
     const [sampleKeyboard, setSampleKeyboard] = React.useState(false);
 
@@ -1751,6 +1995,7 @@
     }, []);
 
     const clearLayer = React.useCallback((i) => updateLayer(i, { notes: [] }), [updateLayer]);
+    const setLayerVolume = React.useCallback((i, v) => updateLayer(i, { volume: v }), [updateLayer]);
 
     /* --- playing notes --------------------------------------------- */
     const pressNote = React.useCallback((midi) => {
@@ -1772,7 +2017,7 @@
 
       const layerIndex = selectedRef.current;
       const layer = patternRef.current.layers[layerIndex];
-      const handle = E.noteOn(layer.voice, midi, 100);
+      const handle = E.noteOn(layer.voice, midi, 100, E.layerLevel(layer));
       heldRef.current[midi] = {
         handle: handle,
         layer: layerIndex,
@@ -1934,7 +2179,7 @@
 
       E.recordSample(E.MAX_SAMPLE_SECONDS).then((info) => {
         stopCountdown();
-        setSampleState({ seconds: info.seconds, recording: false, error: null, countdown: 0 });
+        setSampleState((s) => ({ seconds: info.seconds, recording: false, error: null, countdown: 0, version: s.version + 1 }));
       }, (err) => {
         stopCountdown();
         setSampleState({
@@ -1947,6 +2192,12 @@
     }, []);
 
     const stopSample = React.useCallback(() => E.stopSampleRecording(), []);
+
+    // After a bake the recording IS the edited version, so the editor
+    // starts over from clean settings on the new waveform.
+    const sampleBaked = React.useCallback((info) => {
+      setSampleState((s) => Object.assign({}, s, { seconds: info.seconds, version: s.version + 1 }));
+    }, []);
 
     const clearSample = React.useCallback(() => {
       E.clearSample();
@@ -2052,7 +2303,7 @@
          stays put and the sample is inherited server-side at publish. */
       if (jam.sample && !E.hasSample('studio')) {
         E.loadSampleFromUrl(jam.sample.url, 'studio')
-          .then((info) => setSampleState({ seconds: info.seconds, recording: false, error: null, countdown: 0 }))
+          .then((info) => setSampleState((s) => ({ seconds: info.seconds, recording: false, error: null, countdown: 0, version: s.version + 1 })))
           .catch(() => {});
       }
 
@@ -2180,6 +2431,7 @@
           onOctave={(d) => setBaseMidi((m) => Math.min(84, Math.max(24, m + d * 12)))}
           onSelectLayer={setSelectedLayer}
           onLayerVoice={setLayerVoice}
+          onLayerVolume={setLayerVolume}
           onLayerMute={toggleMute}
           onLayerSolo={toggleSolo}
           onLayerClear={clearLayer}
@@ -2187,6 +2439,7 @@
           onSampleStop={stopSample}
           onSamplePlay={() => { E.ensureAudio(); E.playSample(undefined, null, null, 'studio'); }}
           onSampleClear={clearSample}
+          onSampleBaked={sampleBaked}
           onSampleKeyboard={setSampleKeyboard}
           steps={stepsOf(pattern)}
           pendingLength={pendingLength}
@@ -2218,6 +2471,7 @@
           mayPost={mayPost}
           onNeedSignIn={setMayPost}
           onPublished={afterPublish}
+          onSampleBaked={sampleBaked}
         />
         <JamBoard
           state={board}
