@@ -97,8 +97,11 @@
 
   const E = window.BDJam;                 // the sound + MIDI engine
   const CONFIG = window.BD_JAM || {};
-  const STEPS = E.STEPS;
-  const ALL_STEPS = Array.from({ length: STEPS }, (_, i) => i);
+  /* Loop length belongs to the pattern now, not the page. These build
+     the per-render helpers from whatever length the current loop has. */
+  const stepsOf = (pattern) => E.patternSteps(pattern);
+  const stepList = (count) => Array.from({ length: count }, (_, i) => i);
+  const BAR_STEPS = 16;
 
   /* Is the Formspree endpoint actually filled in? Until it is, the page
      has to say so rather than fake a successful send. */
@@ -271,6 +274,23 @@
           <span className="jam-tempo-unit">BPM</span>
         </div>
 
+        <div className="jam-transport-group jam-length">
+          <span className="jam-tempo-unit">Length</span>
+          {E.LENGTHS.map((opt) => {
+            const active = props.steps === opt.steps;
+            const pending = props.pendingLength === opt.steps;
+            return (
+              <Button key={opt.steps} size="sm"
+                      variant={pending ? 'flag' : (active ? 'primary' : 'ghost')}
+                      aria-pressed={active}
+                      title={opt.hint}
+                      onClick={() => props.onLength(opt.steps)}>
+                {pending ? 'Drop the back half?' : opt.label}
+              </Button>
+            );
+          })}
+        </div>
+
         <div className="jam-transport-group">
           <span className="jam-tempo-unit">
             {props.recording
@@ -342,16 +362,29 @@
      ARRANGE — copy, paste, and the one-click "make the back half match
      the front half", which is most of what anyone actually wants.
      ================================================================= */
-  const BEATS = E.STEPS / E.STEPS_PER_BEAT;          // 8
-
-  const COPY_RANGES = [
-    { label: 'Beats 1–2', from: 0,  len: 8  },
-    { label: 'Beats 3–4', from: 8,  len: 8  },
-    { label: 'Beats 5–6', from: 16, len: 8  },
-    { label: 'Beats 7–8', from: 24, len: 8  },
-    { label: 'Beats 1–4', from: 0,  len: 16 },
-    { label: 'Beats 5–8', from: 16, len: 16 }
-  ];
+  /* The copyable chunks for a given loop length: every pair of beats,
+     then each half. For one bar that's beats 1–2, 3–4, then 1–2 and
+     3–4 as halves; for two bars it runs to beats 7–8 and halves 1–4 /
+     5–8. Built from the length so the menu never offers a range the
+     loop doesn't have. */
+  function copyRangesFor(steps) {
+    const perBeat = E.STEPS_PER_BEAT;
+    const beats = steps / perBeat;
+    const out = [];
+    for (let b = 0; b < beats; b += 2) {
+      out.push({ label: 'Beats ' + (b + 1) + '–' + (b + 2), from: b * perBeat, len: 2 * perBeat });
+    }
+    // Halves are only worth listing when they're bigger than a pair of
+    // beats — in a one-bar loop, a half *is* two beats, and the menu
+    // would just repeat itself.
+    const half = steps / 2;
+    const halfBeats = half / perBeat;
+    if (halfBeats > 2) {
+      out.push({ label: 'Beats 1–' + halfBeats, from: 0, len: half });
+      out.push({ label: 'Beats ' + (halfBeats + 1) + '–' + beats, from: half, len: half });
+    }
+    return out;
+  }
 
   const SCOPES = [
     { value: 'all',   label: 'Everything' },
@@ -363,7 +396,7 @@
     return (
       <div className="jam-arrange">
         <Button size="sm" variant="outline" onClick={props.onDouble}>Double It</Button>
-        <span className="jam-arrange-hint">makes beats 5–8 match beats 1–4</span>
+        <span className="jam-arrange-hint">{props.doubleHint}</span>
 
         <span className="jam-arrange-sep" aria-hidden="true" />
 
@@ -371,7 +404,7 @@
           Copy
           <select className="jam-select" value={props.rangeIndex}
                   onChange={(e) => props.onRange(Number(e.target.value))}>
-            {COPY_RANGES.map((r, i) => <option key={r.label} value={i}>{r.label}</option>)}
+            {props.ranges.map((r, i) => <option key={r.label} value={i}>{r.label}</option>)}
           </select>
         </label>
 
@@ -389,7 +422,7 @@
           Paste at beat
           <select className="jam-select" value={props.pasteBeat}
                   onChange={(e) => props.onPasteBeat(Number(e.target.value))}>
-            {Array.from({ length: BEATS }, (_, i) => (
+            {Array.from({ length: props.beats }, (_, i) => (
               <option key={i} value={i}>{i + 1}</option>
             ))}
           </select>
@@ -468,11 +501,12 @@
   function StepGrid(props) {
     const { pattern, uiStep, onToggle, onAudition, onToggleSample, hasSample,
             layerSteps, selectedLayer, onSelectLayer } = props;
+    const ALL_STEPS = stepList(stepsOf(pattern));
 
     const cell = (key, opts) => (
       <button key={key} type="button" className="jam-cell"
               data-beat={opts.step % E.STEPS_PER_BEAT === 0}
-              data-bar={opts.step % 16 === 0}
+              data-bar={opts.step % BAR_STEPS === 0}
               data-playing={uiStep === opts.step}
               aria-pressed={!!opts.on}
               aria-label={opts.label}
@@ -481,13 +515,14 @@
 
     return (
       <div className="jam-grid-scroll">
-        <div className="jam-grid">
+        <div className="jam-seq" data-steps={ALL_STEPS.length}
+             style={{ '--steps': ALL_STEPS.length }}>
           <div className="jam-row jam-ruler" aria-hidden="true">
             <div />
             {ALL_STEPS.map((s) => (
               <div key={s} className="jam-tick"
                    data-beat={s % E.STEPS_PER_BEAT === 0}
-                   data-bar={s % 16 === 0}>
+                   data-bar={s % BAR_STEPS === 0}>
                 {s % E.STEPS_PER_BEAT === 0 ? (s / E.STEPS_PER_BEAT) + 1 : '·'}
               </div>
             ))}
@@ -531,7 +566,7 @@
               {ALL_STEPS.map((s) => (
                 <div key={s} className="jam-cell"
                      data-beat={s % E.STEPS_PER_BEAT === 0}
-                     data-bar={s % 16 === 0}
+                     data-bar={s % BAR_STEPS === 0}
                      data-playing={uiStep === s}
                      data-note={!!layerSteps[li][s]}
                      data-dim={layer.muted}
@@ -616,11 +651,12 @@
 
     return (
       <section style={{ padding: '0 0 var(--section-y)' }}>
-        {/* Wider than the rest of the page on purpose: thirty-two steps
-            plus a label column need more room than the standard column,
-            and on a big screen that's the difference between the whole
-            loop being visible and having to scroll to see the end of it. */}
-        <div className="nm-container jam-wide">
+        {/* A two-bar loop borrows the wide container: thirty-two steps plus
+            a label column need more room than the standard column, and on
+            a big screen that's the difference between seeing the whole loop
+            and scrolling to reach the end. A one-bar loop fits the normal
+            measure, so it stays in step with the rest of the page. */}
+        <div className={'nm-container' + (props.steps === 32 ? ' jam-wide' : '')}>
           <SectionHeading kicker="Step One" title="The Audition" />
           <p style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-body)',
                       color: 'var(--bone-300)', margin: '18px 0 26px', maxWidth: 680, lineHeight: 1.55 }}>
@@ -1047,6 +1083,7 @@
      ----------------------------------------------------------------- */
   function LoopThumb({ pattern, step }) {
     if (!pattern) return null;
+    const STEPS = stepsOf(pattern);       // thumbnails follow each loop's own length
     const marks = [];
 
     for (let lane = 0; lane < E.LANES.length; lane++) {
@@ -1068,7 +1105,7 @@
     return (
       <svg className="jam-thumb" viewBox={'0 0 ' + STEPS + ' ' + (E.LANES.length + 1)}
            preserveAspectRatio="none" aria-hidden="true">
-        {[0, 8, 16, 24].map((s) => (
+        {stepList(STEPS / 8).map((i) => i * 8).map((s) => (
           <rect key={'g' + s} x={s} y="0" width="0.06" height={E.LANES.length + 1} fill="var(--stage-600)" />
         ))}
         {marks}
@@ -1497,8 +1534,11 @@
 
     // Arranging
     const [clip, setClip] = React.useState(null);
-    const [rangeIndex, setRangeIndex] = React.useState(4);   // "Beats 1–4"
-    const [pasteBeat, setPasteBeat] = React.useState(4);     // beat 5
+    const [rangeIndex, setRangeIndex] = React.useState(0);   // "Beats 1–2", the first half of one bar
+    const [pasteBeat, setPasteBeat] = React.useState(2);     // start of the second half
+    // Set while "1 Bar" is waiting for a second click to confirm dropping
+    // the back half of a two-bar loop that has something in it.
+    const [pendingLength, setPendingLength] = React.useState(null);
     const [scope, setScope] = React.useState('all');
 
     // The microphone pad
@@ -1753,7 +1793,7 @@
       if (recordingRef.current && held.step !== null) {
         const stepDur = E.stepDuration(patternRef.current.bpm);
         const heldFor = Math.max(E.now() - held.at, 0);
-        const len = Math.min(Math.max(Math.round(heldFor / stepDur), 1), STEPS);
+        const len = Math.min(Math.max(Math.round(heldFor / stepDur), 1), stepsOf(patternRef.current));
         addNote(held.layer, { step: held.step, midi: midi, len: len, velocity: 100 });
       }
     }, [addNote]);
@@ -1814,7 +1854,8 @@
 
     /* --- arranging --------------------------------------------------- */
     const doCopy = React.useCallback(() => {
-      const r = COPY_RANGES[rangeIndex];
+      const r = copyRangesFor(stepsOf(patternRef.current))[rangeIndex];
+      if (!r) return;
       setClip(Object.assign(E.copyRange(patternRef.current, r.from, r.len, scope), {
         label: r.label, scopeLabel: (SCOPES.find((sc) => sc.value === scope) || {}).label
       }));
@@ -1828,6 +1869,42 @@
     const doDouble = React.useCallback(() => {
       setPattern((p) => E.duplicateFirstHalf(p));
     }, []);
+
+    /* Switching length. Growing is always safe. Shrinking a loop that
+       has anything in its back half needs a second click on the same
+       button, which is the confirmation — no dialog, and clicking
+       anything else cancels it. The transport is stopped either way,
+       because the playhead position stops meaning anything when the
+       loop changes size underneath it. */
+    const setLength = React.useCallback((nextSteps) => {
+      const p = patternRef.current;
+      const cur = stepsOf(p);
+      if (nextSteps === cur) { setPendingLength(null); return; }
+
+      const shrinking = nextSteps < cur;
+      if (shrinking && E.contentBeyond(p, nextSteps) && pendingLength !== nextSteps) {
+        setPendingLength(nextSteps);
+        return;
+      }
+
+      setPendingLength(null);
+      if (E.isPlaying()) { E.stop(); setPlaying(false); setRecording(false); }
+      setClip(null);                                  // clip offsets no longer line up
+      setRangeIndex(nextSteps === 32 ? 4 : 0);        // "first half" in either menu
+      setPasteBeat(nextSteps / E.STEPS_PER_BEAT / 2); // start of the second half
+      setPattern((prev) => E.changeLength(prev, nextSteps));
+    }, [pendingLength]);
+
+    // Anything else the visitor does cancels a pending shorten.
+    React.useEffect(() => {
+      if (pendingLength === null) return undefined;
+      const cancel = (e) => {
+        if (e.target && e.target.closest && e.target.closest('.jam-length')) return;
+        setPendingLength(null);
+      };
+      window.addEventListener('pointerdown', cancel, true);
+      return () => window.removeEventListener('pointerdown', cancel, true);
+    }, [pendingLength]);
 
     /* --- the microphone ---------------------------------------------- */
     const countdownRef = React.useRef(null);
@@ -2056,7 +2133,7 @@
     const clearAll = React.useCallback(() => {
       setRemixParent(null);
       setPattern((p) => {
-        const fresh = E.emptyPattern();
+        const fresh = E.emptyPattern(stepsOf(p));
         fresh.bpm = p.bpm;
         // Keep the voices they picked; only the notes go.
         fresh.layers.forEach((layer, i) => { layer.voice = p.layers[i].voice; });
@@ -2108,8 +2185,16 @@
           onSamplePlay={() => { E.ensureAudio(); E.playSample(undefined, null, null, 'studio'); }}
           onSampleClear={clearSample}
           onSampleKeyboard={setSampleKeyboard}
+          steps={stepsOf(pattern)}
+          pendingLength={pendingLength}
+          onLength={setLength}
           arrange={{
             rangeIndex, scope, pasteBeat,
+            ranges: copyRangesFor(stepsOf(pattern)),
+            beats: stepsOf(pattern) / E.STEPS_PER_BEAT,
+            doubleHint: stepsOf(pattern) === 32
+              ? 'makes beats 5–8 match beats 1–4'
+              : 'makes beats 3–4 match beats 1–2',
             hasClip: !!clip,
             clipNote: clip ? 'holding ' + clip.label + ' · ' + clip.scopeLabel : '',
             onRange: setRangeIndex,

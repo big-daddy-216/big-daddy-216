@@ -95,18 +95,25 @@
    standard measure, which is what keeps the prose readable. */
 .jam-wide { max-width: var(--container-wide); }
 
-/* Thirty-two steps need real room; below that the whole grid scrolls
-   sideways rather than shrinking the cells past being hittable. */
-.jam-grid {
-  min-width: 940px;
+/* The sequencer. (Not .jam-grid — that name belongs to the jam board's
+   card wall further down, and the two must not share rules.)
+
+   Column count follows the loop's length through --steps, set inline on
+   the element. The minimum width is what stops the cells shrinking past
+   being hittable; below it the whole thing scrolls sideways instead. A
+   one-bar loop needs about half the room of a two-bar one. */
+.jam-seq {
+  --steps: 16;
+  min-width: 560px;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
+.jam-seq[data-steps='32'] { min-width: 940px; }
 
 .jam-row {
   display: grid;
-  grid-template-columns: 116px repeat(32, minmax(0, 1fr));
+  grid-template-columns: 116px repeat(var(--steps, 16), minmax(0, 1fr));
   gap: 3px;
   align-items: center;
 }
@@ -650,7 +657,7 @@
 
 @media (max-width: 700px) {
   .jam-layers { grid-template-columns: 1fr; }
-  .jam-row { grid-template-columns: 92px repeat(32, minmax(0, 1fr)); }
+  .jam-row { grid-template-columns: 92px repeat(var(--steps, 16), minmax(0, 1fr)); }
   .jam-lane-label {
     font-size: 10px;
     padding: 8px 6px;
@@ -661,7 +668,8 @@
   /* Below this width the grid scrolls sideways rather than squashing
      the cells down to something unhittable. Since it's scrolling
      anyway, the cells may as well stay big enough for a fingertip. */
-  .jam-grid { min-width: 1180px; }
+  .jam-seq { min-width: 640px; }
+  .jam-seq[data-steps='32'] { min-width: 1180px; }
   .jam-cell { height: 34px; }
 }
 

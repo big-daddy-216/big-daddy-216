@@ -17,12 +17,23 @@
 
   /* ---------------------------------------------------------------
      THE SHAPE OF A LOOP
-     Two bars of 4/4, sliced into 32 sixteenth-notes ("steps").
+     One bar of 4/4 by default, sliced into 16 sixteenth-notes
+     ("steps"). A loop can be switched to two bars — 32 steps — and
+     carries its own length, so both sizes coexist happily.
      --------------------------------------------------------------- */
 
-  var STEPS = 32;               // two bars of 4/4, in sixteenth notes
   var STEPS_PER_BEAT = 4;
+  var STEPS_DEFAULT = 16;       // one bar of 4/4
+  var STEPS_MAX = 32;           // two bars, for anyone who wants the room
   var MAX_LAYERS = 4;
+
+  /* The lengths a loop can be. Anything added here has to stay a whole
+     number of bars, and no longer than STEPS_MAX — the shared loop code
+     stores the step count in a single byte and the grid assumes bars. */
+  var LENGTHS = [
+    { steps: 16, label: '1 Bar',  hint: '16 steps' },
+    { steps: 32, label: '2 Bars', hint: '32 steps' }
+  ];
 
   /* The six drum lanes, top to bottom. `midi` is the General MIDI
      drum note each lane exports as, so the .mid file lands on the
@@ -50,7 +61,14 @@
   var MAX_NOTES = 96;           // per layer, to keep the shared code sane
   var MAX_SAMPLE_SECONDS = 4;
 
-  function blankSteps() { return new Array(STEPS).fill(false); }
+  function blankSteps(count) { return new Array(count).fill(false); }
+
+  /* How long a given loop is. Older patterns (and anything half-built)
+     may not carry the field, so this is the only place that guesses. */
+  function patternSteps(pattern) {
+    var n = pattern && pattern.steps;
+    return (n === 16 || n === 32) ? n : STEPS_DEFAULT;
+  }
 
   function emptyLayer(voiceId) {
     return { voice: voiceId || VOICES[0].id, muted: false, solo: false, notes: [] };
@@ -61,9 +79,10 @@
      The sample lane holds only the *pattern* — the audio itself lives in
      the engine. It stays on this machine unless the visitor
      deliberately publishes a jam with the sample included. */
-  function emptyPattern() {
+  function emptyPattern(steps) {
+    var count = (steps === 16 || steps === 32) ? steps : STEPS_DEFAULT;
     var drums = [];
-    for (var i = 0; i < LANES.length; i++) drums.push(blankSteps());
+    for (var i = 0; i < LANES.length; i++) drums.push(blankSteps(count));
     var layers = [];
     for (var l = 0; l < MAX_LAYERS; l++) {
       layers.push(emptyLayer(VOICES[Math.min(l, VOICES.length - 1)].id));
@@ -74,7 +93,7 @@
     if (layers[1]) layers[1].voice = 'fuzzbass';
     if (layers[2]) layers[2].voice = 'epiano';
     if (layers[3]) layers[3].voice = 'choir';
-    return { bpm: BPM_DEFAULT, drums: drums, sample: blankSteps(), layers: layers };
+    return { bpm: BPM_DEFAULT, steps: count, drums: drums, sample: blankSteps(count), layers: layers };
   }
 
   function clamp(n, lo, hi) { return n < lo ? lo : (n > hi ? hi : n); }
@@ -1006,7 +1025,7 @@
       scheduleStep(state, currentStep, nextStepTime);
       playQueue.push({ step: currentStep, time: nextStepTime });
       nextStepTime += stepDuration(state.bpm);
-      currentStep = (currentStep + 1) % STEPS;
+      currentStep = (currentStep + 1) % patternSteps(state.pattern);
     }
 
     /* The playhead normally drains this queue, but requestAnimationFrame
@@ -1092,7 +1111,10 @@
 
   var TPQ = 96;                        // ticks per quarter note
   var TICKS_PER_STEP = TPQ / 4;        // 24 ticks per sixteenth
-  var LOOP_TICKS = STEPS * TICKS_PER_STEP;  // 768 — the full two bars
+  /* How many ticks the whole loop runs to. Tracks are padded out to
+     this so a DAW imports a clip of exactly the right length instead of
+     one that stops at the last hit. */
+  function loopTicks(pattern) { return patternSteps(pattern) * TICKS_PER_STEP; }
 
   /* Variable-length quantity — MIDI's 7-bits-per-byte integer format.
      n=0 has to produce a single 0x00 byte, and a negative number must
@@ -1129,7 +1151,7 @@
      a repeated note can be silenced by its own predecessor. */
   var ORDER_SETUP = 0, ORDER_OFF = 1, ORDER_ON = 2;
 
-  function buildTrack(events) {
+  function buildTrack(events, totalTicks) {
     events.sort(function (a, b) {
       return (a.tick - b.tick) || (a.order - b.order) || (a.seq - b.seq);
     });
@@ -1142,7 +1164,7 @@
     for (var i = 0; i < events.length; i++) {
       if (events[i].tick > last) last = events[i].tick;
     }
-    var endTick = Math.max(LOOP_TICKS, last);
+    var endTick = Math.max(totalTicks, last);
 
     var body = [], prev = 0;
     for (var j = 0; j < events.length; j++) {
@@ -1161,10 +1183,10 @@
      the gap before the same pitch plays again, the first note's "off"
      would land after the second note's "on" and silence it. So each
      note is truncated at the next onset of the same pitch. */
-  function emitNotes(list, channel, onsets, ev) {
+  function emitNotes(list, channel, onsets, ev, totalTicks) {
     var byPitch = {};
     onsets.forEach(function (o) {
-      if (o.start >= LOOP_TICKS) return;
+      if (o.start >= totalTicks) return;
       var k = clamp(Math.round(o.note), 0, 127);
       (byPitch[k] = byPitch[k] || []).push({
         note: k, vel: o.vel, start: Math.round(o.start), end: Math.round(o.end)
@@ -1177,8 +1199,8 @@
         var o = arr[i];
         if (i > 0 && arr[i - 1].start === o.start) continue;   // same pitch, same step
         var nextStart = (i + 1 < arr.length) ? arr[i + 1].start : Infinity;
-        var end = Math.min(o.end, nextStart, LOOP_TICKS);
-        if (end <= o.start) end = Math.min(o.start + 1, LOOP_TICKS);
+        var end = Math.min(o.end, nextStart, totalTicks);
+        if (end <= o.start) end = Math.min(o.start + 1, totalTicks);
         if (end <= o.start) continue;
         // A note-on with velocity 0 *is* a note-off to every parser.
         var vel = Math.max(1, clamp(Math.round(o.vel), 1, 127));
@@ -1193,6 +1215,8 @@
     // writes a tempo of zero and makes DAWs divide by it.
     var bpmRaw = Number(pattern.bpm);
     var bpm = clamp(isFinite(bpmRaw) && bpmRaw > 0 ? bpmRaw : BPM_DEFAULT, BPM_MIN, BPM_MAX);
+    var steps = patternSteps(pattern);
+    var total = loopTicks(pattern);
     var usPerQuarter = clamp(Math.round(60000000 / bpm), 1, 0xffffff);
     var seq = 0;
     function ev(tick, order, bytes) {
@@ -1227,15 +1251,15 @@
         ev(0, ORDER_SETUP, [0xc0 | channel, VOICES[vIdx].program & 0x7f])
       ];
       emitNotes(trk, channel, layer.notes.map(function (n) {
-        var startTick = clamp(n.step, 0, STEPS - 1) * TICKS_PER_STEP;
+        var startTick = clamp(n.step, 0, steps - 1) * TICKS_PER_STEP;
         return {
           note: n.midi,
           vel: n.velocity || 100,
           start: startTick,
-          end: startTick + clamp(n.len || 1, 1, STEPS) * TICKS_PER_STEP
+          end: startTick + clamp(n.len || 1, 1, steps) * TICKS_PER_STEP
         };
-      }), ev);
-      layerTracks.push(buildTrack(trk));
+      }), ev, total);
+      layerTracks.push(buildTrack(trk, total));
       channel++;
     });
 
@@ -1247,18 +1271,18 @@
     ];
     var hits = [];
     for (var l = 0; l < LANES.length; l++) {
-      for (var s = 0; s < STEPS; s++) {
+      for (var s = 0; s < steps; s++) {
         if (!pattern.drums[l] || !pattern.drums[l][s]) continue;
         var tick = s * TICKS_PER_STEP;
         hits.push({ note: LANES[l].midi, vel: 110, start: tick, end: tick + 12 });
       }
     }
-    emitNotes(td, 9, hits, ev);
+    emitNotes(td, 9, hits, ev, total);
 
     /* The sample lane is deliberately absent: a MIDI file carries notes,
        not audio, so there is nothing here that could represent it. */
 
-    var tracks = [buildTrack(t0)].concat(layerTracks, [buildTrack(td)]);
+    var tracks = [buildTrack(t0, total)].concat(layerTracks, [buildTrack(td, total)]);
 
     // The track count is derived, never hard-coded — a header that
     // disagrees with the chunks that follow makes parsers read past the
@@ -1359,7 +1383,7 @@
      so a pattern of hits that make no sound would only confuse whoever
      opened the link. */
   function encodeLoop(pattern) {
-    var steps = STEPS;
+    var steps = patternSteps(pattern);
     var layers = (pattern.layers || []).slice(0, MAX_LAYERS);
 
     var bytes = [
@@ -1400,7 +1424,7 @@
     var OLD_STEPS = 16, OLD_HEADER = 17;
     if (b.length < OLD_HEADER) return null;
 
-    var p = emptyPattern();
+    var p = emptyPattern(OLD_STEPS);
     p.bpm = clamp(b[2] + 40, BPM_MIN, BPM_MAX);
     p.layers[0].voice = (VOICES[b[3]] || VOICES[0]).id;
 
@@ -1434,18 +1458,18 @@
       if (b[1] === 1) return decodeV1(b);
       if (b[1] !== VERSION) return null;
 
-      var steps = b[3] || STEPS;
+      var steps = (b[3] === 16 || b[3] === 32) ? b[3] : STEPS_DEFAULT;
       var layerCount = clamp(b[4], 0, MAX_LAYERS);
       var laneBytes = bytesPerLane(steps);
       var offset = 5;
       if (b.length < offset + LANES.length * laneBytes) return null;
 
-      var p = emptyPattern();
+      var p = emptyPattern(steps);
       p.bpm = clamp(b[2] + 40, BPM_MIN, BPM_MAX);
 
       for (var l = 0; l < LANES.length; l++) {
-        var lane = unpackBits(b, offset, Math.min(steps, STEPS));
-        for (var s = 0; s < STEPS; s++) p.drums[l][s] = !!lane[s];
+        var lane = unpackBits(b, offset, steps);
+        for (var s = 0; s < steps; s++) p.drums[l][s] = !!lane[s];
         offset += laneBytes;
       }
 
@@ -1462,9 +1486,9 @@
         layer.notes = [];
         for (var n = 0; n < count; n++) {
           layer.notes.push({
-            step: clamp(b[offset], 0, STEPS - 1),
+            step: clamp(b[offset], 0, steps - 1),
             midi: clamp(b[offset + 1], 0, 127),
-            len: clamp(b[offset + 2], 1, STEPS),
+            len: clamp(b[offset + 2], 1, steps),
             velocity: 100
           });
           offset += 3;
@@ -1509,13 +1533,15 @@
      top, so pasting twice gives the same result as pasting once. */
   function pasteRange(pattern, clip, atStep) {
     if (!clip) return pattern;
-    var len = Math.min(clip.length, STEPS - atStep);
+    var steps = patternSteps(pattern);
+    var len = Math.min(clip.length, steps - atStep);
     if (len <= 0) return pattern;
 
     var next = {
       bpm: pattern.bpm,
+      steps: steps,
       drums: pattern.drums.map(function (row) { return row.slice(); }),
-      sample: (pattern.sample || blankSteps()).slice(),
+      sample: (pattern.sample || blankSteps(steps)).slice(),
       layers: pattern.layers.map(function (layer) {
         return {
           voice: layer.voice, muted: layer.muted, solo: layer.solo,
@@ -1550,20 +1576,73 @@
     return next;
   }
 
+  /* Is there anything at or past `fromStep`? Asked before shortening a
+     loop, so the page can warn that the back half is about to go rather
+     than silently dropping someone's work. */
+  function contentBeyond(pattern, fromStep) {
+    var steps = patternSteps(pattern);
+    for (var s = fromStep; s < steps; s++) {
+      for (var l = 0; l < pattern.drums.length; l++) {
+        if (pattern.drums[l][s]) return true;
+      }
+      if (pattern.sample && pattern.sample[s]) return true;
+    }
+    return (pattern.layers || []).some(function (layer) {
+      return layer.notes.some(function (n) { return n.step >= fromStep; });
+    });
+  }
+
+  /* Returns a new pattern at a different length. Growing pads the new
+     space with silence; shrinking keeps whatever fits and drops the rest,
+     which is why callers check contentBeyond() first. Notes that would
+     run past the new end are shortened to it, not thrown away. */
+  function changeLength(pattern, nextSteps) {
+    var cur = patternSteps(pattern);
+    if (nextSteps !== 16 && nextSteps !== 32) return pattern;
+    if (nextSteps === cur) return pattern;
+
+    var fit = function (row) {
+      var out = row.slice(0, nextSteps);
+      while (out.length < nextSteps) out.push(false);
+      return out;
+    };
+
+    return {
+      bpm: pattern.bpm,
+      steps: nextSteps,
+      drums: pattern.drums.map(fit),
+      sample: fit(pattern.sample || []),
+      layers: pattern.layers.map(function (layer) {
+        return {
+          voice: layer.voice, muted: layer.muted, solo: layer.solo,
+          notes: layer.notes
+            .filter(function (n) { return n.step < nextSteps; })
+            .map(function (n) {
+              return {
+                step: n.step, midi: n.midi, velocity: n.velocity,
+                len: Math.min(n.len, nextSteps - n.step)
+              };
+            })
+        };
+      })
+    };
+  }
+
   /* The common case: make the back half match the front half. */
   function duplicateFirstHalf(pattern) {
-    var half = STEPS / 2;
+    var half = patternSteps(pattern) / 2;
     return pasteRange(pattern, copyRange(pattern, 0, half, 'all'), half);
   }
 
   function isEmptyPattern(p) {
+    var steps = patternSteps(p);
     if ((p.layers || []).some(function (ly) { return ly.notes.length; })) return false;
     for (var l = 0; l < p.drums.length; l++) {
-      for (var s = 0; s < STEPS; s++) { if (p.drums[l][s]) return false; }
+      for (var s = 0; s < steps; s++) { if (p.drums[l][s]) return false; }
     }
     // A sample arrangement counts as work, even though the audio behind
     // it only leaves this machine on a deliberate publish.
-    for (var s2 = 0; s2 < STEPS; s2++) { if (p.sample && p.sample[s2]) return false; }
+    for (var s2 = 0; s2 < steps; s2++) { if (p.sample && p.sample[s2]) return false; }
     return true;
   }
 
@@ -1575,7 +1654,12 @@
 
   window.BDJam = {
     // shape
-    STEPS: STEPS,
+    STEPS_DEFAULT: STEPS_DEFAULT,
+    STEPS_MAX: STEPS_MAX,
+    LENGTHS: LENGTHS,
+    patternSteps: patternSteps,
+    changeLength: changeLength,
+    contentBeyond: contentBeyond,
     STEPS_PER_BEAT: STEPS_PER_BEAT,
     MAX_LAYERS: MAX_LAYERS,
     LANES: LANES,

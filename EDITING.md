@@ -101,7 +101,10 @@ page**, the top nav, and the footer's **Band** column.
 
 What's in it:
 
-- **Two bars, 32 steps.** Six drum lanes, plus a lane for a recorded sample.
+- **One bar (16 steps) by default, two bars (32) on request.** A `1 Bar / 2 Bars`
+  toggle in the transport. Going longer keeps everything; going shorter asks
+  first if there's anything in the back half. Six drum lanes, plus a lane for a
+  recorded sample.
 - **Four keyboard layers**, each with its own voice, mute, solo and clear.
   Record a riff, let it loop, then riff over it on the next layer. The selected
   layer (the highlighted card) is the one the keyboard plays and records into.
@@ -245,15 +248,21 @@ code in it, so you can poke at it from the browser console — try `BDJam.playDr
 |---|---|
 | The six drum lanes (or their MIDI notes) | `var LANES = [ … ]` |
 | The five keyboard voices | `var VOICES = [ … ]` and the `build…` functions |
-| How long the loop is, or how many layers | `var STEPS`, `var MAX_LAYERS` |
+| Which loop lengths are offered, and the default | `var LENGTHS`, `STEPS_DEFAULT` |
+| How many layers | `var MAX_LAYERS` |
 | Tempo range and default | `BPM_MIN`, `BPM_MAX`, `BPM_DEFAULT` |
 | How the kick/snare/hat sound | `drumKick`, `drumSnare`, `drumHat`, … |
 | How long a sample can be | `MAX_SAMPLE_SECONDS` |
 
-Changing `STEPS` or `MAX_LAYERS` changes the shared loop code too. That's fine —
-the code carries a version number, and older links keep working: a link made
-before this rewrite still opens, with its single bar landing in the first half of
-the loop and its notes becoming layer one.
+Each loop carries its own length, so 16- and 32-step loops share links, the
+`.mid` export, and the jam board without any conversion. Only 16 and 32 are
+valid: the shared code stores the step count in one byte and the grid assumes
+whole bars, so adding a length means adding it to `LENGTHS` *and* to the checks
+in `patternSteps` / `changeLength`.
+
+Changing `MAX_LAYERS` changes the shared loop code too. That's fine — the code
+carries a version number, and older links keep working: a link made before the
+layers existed still opens as a one-bar loop with its notes on layer one.
 
 One rule if you edit the sound: never fade a volume to exactly `0` with
 `exponentialRampToValueAtTime` — browsers throw an error. Fade to the tiny value
