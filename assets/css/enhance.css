@@ -42,7 +42,8 @@ body { overflow-x: hidden; }
   #video { -webkit-tap-highlight-color: transparent; }
   #shows figure[role="button"]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
   @media (max-width: 560px) {
-    #video { height: 210px !important; }
+    /* the square frame fills the phone edge to edge */
+    #video { height: 100vw !important; }
   }
 
   /* ===================================================================

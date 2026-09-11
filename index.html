@@ -33,8 +33,9 @@
 
     /* =====================================================================
        SITE VIDEO MAP — the two music-video clips (files in assets/video/).
-       • banner  — the 10-second loop that runs full-width under the awards
-                   strip. Silent by default; click it for sound.
+       • banner  — the 10-second loop that runs under the awards strip,
+                   shown whole with black either side. Silent by default;
+                   click it for sound.
        • teaser  — the short square clip in the "Live & Loud" grid. Click it
                    to open the full-screen player (with sound).
        Each has a matching *Poster still, shown before the file loads.
@@ -165,7 +166,7 @@
   /* ===================================================================
      THE VIDEO — "Chasing Big Daddy"
      Two clips, both listed in the SITE VIDEO MAP at the top of the file:
-       • VideoBanner — full-width 10s loop. Runs silent; click it (or press
+       • VideoBanner — the 10s loop, shown whole on a black band. Runs silent; click it (or press
          Enter on the Sound button) to turn the sound on. It mutes itself
          again once you scroll past it.
        • ClipTile    — the short square clip that sits in the "Live & Loud"
@@ -237,16 +238,18 @@
                aria-label={window.BD_VIDEOS.title + ' — official music video'}
                style={{
                  position: 'relative', overflow: 'hidden', cursor: 'pointer',
-                 height: 'clamp(230px, 32vw, 420px)', background: 'var(--stage-black)',
+                 /* Tall enough to show the whole square frame; the black
+                    background fills in on either side of it. */
+                 height: 'clamp(360px, 56vw, 760px)', background: 'var(--stage-black)',
                  borderTop: '1px solid var(--border-hairline)',
                  borderBottom: '1px solid var(--border-hairline)',
                }}>
         <video ref={ref} muted loop playsInline preload="none" tabIndex={-1}
                poster={window.BD_VIDEOS.bannerPoster} aria-hidden="true"
                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%',
-                        objectFit: 'cover', objectPosition: 'center 38%',
+                        objectFit: 'contain', objectPosition: 'center',
                         filter: 'saturate(0.98) brightness(0.76)' }} />
-        {/* scrims: bottom for the type, side fades so the square crop melts into the page */}
+        {/* scrims: bottom for the type, side fades so the square frame melts into the black either side */}
         <div style={{ position: 'absolute', inset: 0, background: 'var(--scrim-bottom)' }} />
         <div style={{ position: 'absolute', inset: 0, background:
               'linear-gradient(90deg, rgba(11,14,22,0.9), rgba(11,14,22,0) 20%, rgba(11,14,22,0) 80%, rgba(11,14,22,0.9))' }} />

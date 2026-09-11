@@ -85,8 +85,8 @@ window.BD_VIDEOS = {
 - The `*-poster.jpg` stills are the first frame of each clip; they show while the
   video loads. If you swap a clip, grab a fresh still or the old one will flash
   first.
-- Square-ish source video works well: the banner crops to a wide strip from the
-  middle of the frame.
+- Square source video is what the banner is built for: it shows the whole frame,
+  letterboxed on black either side.
 
 ## Adding a brand-new photo slot
 
