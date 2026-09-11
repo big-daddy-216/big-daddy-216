@@ -8,32 +8,33 @@ bundles, no encoding. This guide says exactly which file to open for each change
 ```
 index.html              ← the home page: all the words live here
 jam.html                ← "Join the Company — Jam With Us!" (synth + the board)
-music.html              ← the records, played from the media bucket
+music.html              ← the records, played from the media bucket (+ the upload panel)
 videos.html             ← the clips, played from the media bucket
 assets/
   css/  site.css         ← colors, fonts, type scale (the "design system")
         enhance.css      ← responsive tweaks, lightbox, the top bar + mobile menu
         jam.css          ← styles used only by the jam page
         media.css        ← styles for the music and video pages
-  data/ catalog.js       ← ★ the song and video list — the file you edit
+  data/ catalog.js       ← the hand-edited song/video list (uploads go in the database)
   fonts/ *.woff2         ← the 4 type families, as real font files
   js/   react…, babel…   ← libraries (don't touch)
         design-system.js ← reusable pieces: buttons, cards, posters, album tiles
         site-nav.js      ← the top bar, shared by every page
-        catalog.js       ← turns catalog entries into playable addresses
+        catalog.js       ← the library: reads /api/media + catalog.js, sends uploads
         lightbox.js      ← photo enlarge behavior
         jam-engine.js    ← the synth: sound, MIDI export, loop codes
   photos/ posters/ brand/ ← all images (see assets/README.md)
 
-functions/              ← the board's back end (Cloudflare Pages Functions)
+functions/              ← the back end: the board + the music library (Pages Functions)
 migrations/             ← the database tables
 scripts/d1.mjs          ← migrations + moderation, from your own machine
+scripts/upload-song.mjs ← put a song up from your own machine
 wrangler.toml           ← which database and bucket to use
 ```
 
 The words on the pages are still just words in the HTML. `functions/` and
-`migrations/` are the only genuinely new machinery, and they only matter to the
-jam board.
+`migrations/` are the only genuinely new machinery; they matter to the jam
+board and to putting songs up.
 
 To preview locally: either **double-click `index.html`**, or run a tiny server
 from this folder — `python -m http.server 8217` — and open
@@ -275,31 +276,79 @@ affect the home page. It uses the same named colors and fonts from `site.css`.
 
 ## Putting music and videos up
 
-`music.html` and `videos.html` both read from **one file**:
-`assets/data/catalog.js`. You never edit the pages themselves.
-
 The actual audio and video live in the Cloudflare R2 bucket rather than in this
-repository, because git is a bad place to keep hundred-megabyte files.
+repository, because git is a bad place to keep hundred-megabyte files. The
+list of what's there lives in the database, and the pages read it from
+`/api/media`.
 
-**To add a song:**
+### To add a song — from the site
 
-1. Upload the mp3 in the Cloudflare dashboard: **R2 → `bigdaddy-media` →
+1. Open **bigdaddyand.co/music.html** and scroll to the bottom:
+   *"Got the band word? Put a song up."*
+2. Pick the file (MP3, M4A, WAV, OGG or FLAC — straight off a phone is fine).
+   The title fills in from the filename and the length is measured before
+   anything is sent; change whatever you like.
+3. Album is optional. Songs with the same album name are grouped together and
+   share artwork, so give the artwork once and every later song on that
+   record picks it up. Leave it blank for a single.
+4. Type the band word — the same one the jam board uses — and press
+   **Put it up**. The bar fills, and the song is on the page for everyone.
+
+The word is remembered by that browser for 90 days, same as on the jam page,
+so the second song is just a file and a title.
+
+> Anyone who has the band word can do this, not only you. That's the trade
+> for having one word instead of two. If the word ever gets around further
+> than you'd like, change it (`npm run secret:hash`, then update
+> `JAM_PASSPHRASE_HASH` in Pages → Settings) and everyone signs in again.
+
+### To add a song — from this machine
+
+No browser and no band word; it uses `ADMIN_TOKEN` from `.dev.vars`:
+
+```bash
+npm run song -- "C:\path\to\4 Minute Clinic.m4a"
+```
+
+Title defaults to the filename. Add `--title`, `--album`, `--year`, `--blurb`,
+`--credits` or `--cover art.jpg` as needed. The length is read out of the
+file's own header.
+
+### To see what's up, or take something down
+
+```bash
+npm run songs                                # everything, with slugs
+node scripts/d1.mjs hide-song 4-minute-clinic
+node scripts/d1.mjs unhide-song 4-minute-clinic
+```
+
+Hiding takes it off the page; the file stays in the bucket, so unhiding is
+instant. A typo in a title is a one-line fix in the D1 console:
+`UPDATE media SET title = 'Right Name' WHERE slug = '…'`.
+
+Uploads land in the bucket under `music/<album>/<song>.<ext>`; artwork under
+`music/covers/`. Songs with the same title get `-2`, `-3` — nothing is ever
+overwritten.
+
+### The hand-edited list still works
+
+`assets/data/catalog.js` is read too, and merged with the database (the
+database wins if both have the same `slug`). It's how the two videos are
+listed today, and it's there for anything you'd rather wire up by hand:
+
+1. Upload the file in the Cloudflare dashboard: **R2 → `bigdaddy-media` →
    Upload**, into a folder like `music/pretzel-sunday/`.
-2. Open `assets/data/catalog.js` and add a block to `tracks`, copying the
-   commented-out example. `src` is the **key inside the bucket**
-   (`music/pretzel-sunday/track.mp3`), not a full web address — the page adds
-   the address part.
-3. Set `duration_s` to the length in seconds so it shows before the file loads.
+2. Add a block to `tracks` (or `videos`), copying the commented-out example.
+   `src` is the **key inside the bucket**, not a full web address — the page
+   adds the address part. Anything starting with `assets/` is served from the
+   repo instead, which is how album art in `assets/albums/` works.
+3. **For a video, always set a `poster`** — a still image — or the tile is a
+   black rectangle until somebody presses play.
 4. Save and push.
 
-Album art can stay in `assets/albums/` and be referenced as
-`assets/albums/whatever.jpg`; anything that doesn't start with `assets/` is
-treated as a bucket key.
-
-**To add a video**, same thing under `videos`, and **always set a `poster`** —
-a still image — or the tile is a black rectangle until somebody presses play.
-
-`sort_order` controls the running order; bigger numbers come first.
+`sort_order` controls the running order; bigger numbers come first. Uploads
+through the site start at 1000 and climb, so they sit above anything in the
+file unless you say otherwise.
 
 ## The top bar
 

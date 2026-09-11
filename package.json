@@ -7,6 +7,8 @@
     "db:migrate": "node scripts/d1.mjs migrate",
     "db:status": "node scripts/d1.mjs status",
     "jams": "node scripts/d1.mjs recent",
+    "songs": "node scripts/d1.mjs songs",
+    "song": "node scripts/upload-song.mjs",
     "secret:hash": "node scripts/hash-passphrase.mjs"
   }
 }

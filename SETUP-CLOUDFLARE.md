@@ -81,8 +81,9 @@ problem. Music and video are unaffected by it — only the jam samples need it.
    immutability trigger has semicolons inside it, so running it a statement at
    a time will cut the trigger in half and silently leave jams editable.
 
-Either way, leave `migrations/0002_media.sql` alone. That one is for later,
-when music gets an upload page instead of a hand-edited list.
+`0002_media.sql` is the music library — the table the upload panel on
+`music.html` writes to. Apply it the same way (it's already in on the live
+database).
 
 Check it worked:
 
@@ -130,6 +131,11 @@ Production and Preview:
 Add one plain (non-secret) variable too:
 
 - `MEDIA_BASE_URL` = `https://media.bigdaddyand.co`
+
+Optional: `MEDIA_MAX_BYTES` caps a song upload (default 80 MB, which sits
+under the 100 MB request limit on the free plan). Uploads only need the
+band word, so the same `ADMIN_TOKEN` also lets `scripts/upload-song.mjs`
+post from your own machine.
 
 > **Set these for Preview as well as Production.** It's the easiest thing to
 > forget, and every preview build fails on the first sign-in without them.

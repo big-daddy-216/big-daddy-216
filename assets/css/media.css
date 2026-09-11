@@ -158,6 +158,50 @@
   font-family: var(--font-stamp); font-size: var(--fs-xs); color: var(--bone-400);
 }
 
+/* ---- putting a song up (music.html, bottom of the page) ---- */
+.md-add { margin-top: var(--sp-6); }
+.md-add-line { margin: 0; font-size: var(--fs-sm); color: var(--bone-400); }
+.md-add-toggle {
+  padding: 0; cursor: pointer;
+  background: none; border: 0;
+  font: inherit; color: var(--ember-glow); text-decoration: underline;
+}
+.md-add-toggle:hover { color: var(--bone-100); }
+.md-add-toggle:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.md-add-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+.md-add-title {
+  margin: var(--sp-2) 0 0;
+  font-family: var(--font-display); font-size: var(--fs-d3); line-height: 1.05;
+  text-transform: uppercase; color: var(--text-strong);
+}
+.md-form { display: flex; flex-direction: column; gap: var(--sp-4); }
+.md-form-row { display: flex; gap: var(--sp-4); }
+.md-form-row > * { flex: 1 1 auto; }
+.md-form input[type="file"] { padding: 10px 12px; cursor: pointer; }
+.md-form input[type="file"]::file-selector-button {
+  margin-right: 12px; padding: 6px 12px; cursor: pointer;
+  background: var(--stage-800); color: var(--bone-100);
+  border: 1px solid var(--border-strong); border-radius: var(--r-pill);
+  font-family: var(--font-stamp); font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+}
+.md-form-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3) var(--sp-4); }
+.md-fineprint { font-size: var(--fs-xs); color: var(--bone-400); max-width: 420px; line-height: 1.5; }
+.md-progress { height: 6px; background: var(--stage-700); border-radius: 3px; overflow: hidden; }
+.md-progress span {
+  display: block; height: 100%; background: var(--ember-500);
+  transition: width var(--dur-fast) linear;
+}
+.md-done {
+  margin: 0; padding: 10px 13px;
+  border-left: 3px solid var(--ember-500);
+  background: rgba(255, 122, 26, .1);
+  color: var(--bone-200); font-size: var(--fs-sm);
+}
+.md-done strong { color: var(--text-strong); }
+
 /* ===================================================================
    VIDEOS
    =================================================================== */
@@ -243,6 +287,7 @@
 }
 @media (max-width: 560px) {
   .md-videogrid { grid-template-columns: 1fr; }
+  .md-form-row { flex-direction: column; }
   .md-track { grid-template-columns: 40px minmax(0, 1fr); }
   .md-track-time { grid-column: 2; }
 }

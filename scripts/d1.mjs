@@ -17,7 +17,12 @@
  *   node scripts/d1.mjs recent [n]         the last n jams
  *   node scripts/d1.mjs hide <jam-id>      take one down (shows as removed by the band)
  *   node scripts/d1.mjs unhide <jam-id>    put it back
+ *   node scripts/d1.mjs songs              everything on the music page, with slugs
+ *   node scripts/d1.mjs hide-song <slug>   take a song off the page (the file stays)
+ *   node scripts/d1.mjs unhide-song <slug> put it back
  *   node scripts/d1.mjs sql "SELECT …"     anything else
+ *
+ * To put a song UP from here, see scripts/upload-song.mjs.
  *
  * Credentials come from .dev.vars (gitignored) or the environment:
  *
@@ -118,10 +123,7 @@ async function migrate({ dryRun }) {
     .filter((f) => f.endsWith('.sql'))
     .sort();
 
-  /* 0002 is the media table, which belongs to the upload page that doesn't
-     exist yet. Applying it early would put an unused table in the database
-     and make it look like a feature that's missing rather than unbuilt. */
-  const pending = files.filter((f) => !done.has(f) && !f.startsWith('0002_'));
+  const pending = files.filter((f) => !done.has(f));
 
   if (!pending.length) {
     console.log('Nothing to apply. ' + files.filter((f) => done.has(f)).length + ' migration(s) already in.');
@@ -198,6 +200,34 @@ async function setStatus(id, status) {
   }
 }
 
+/* ---- the music page ---- */
+
+async function songs() {
+  const list = rows(await query(
+    `SELECT slug, title, album, year, duration_s, status, bytes, created_at
+     FROM media WHERE kind = 'track' ORDER BY sort_order DESC, created_at DESC`
+  ));
+  if (!list.length) { console.log('Nothing on the music page yet (from the database, that is).'); return; }
+  for (const t of list) {
+    const when = new Date(t.created_at).toISOString().slice(0, 10);
+    const len = t.duration_s
+      ? Math.floor(t.duration_s / 60) + ':' + String(Math.round(t.duration_s % 60)).padStart(2, '0')
+      : '?:??';
+    const mb = t.bytes ? (t.bytes / 1048576).toFixed(1) + ' MB' : '';
+    const flag = t.status === 'public' ? '' : '  [' + t.status + ']';
+    console.log(`${t.slug.padEnd(28)} ${when}  ${len.padStart(5)}  ${mb.padStart(7)}  ${t.title}${t.album ? ' — ' + t.album : ''}${flag}`);
+  }
+}
+
+async function setSongStatus(slug, status) {
+  if (!slug) throw new Error('Which song? Pass its slug (see: songs).');
+  const found = rows(await query('SELECT slug, title FROM media WHERE slug = ?', [slug]));
+  if (!found.length) throw new Error('No song with the slug ' + slug + '.');
+  await query('UPDATE media SET status = ? WHERE slug = ?', [status, slug]);
+  console.log(`"${found[0].title}" is now ${status}.`);
+  if (status === 'hidden') console.log('The file is still in the bucket; only the listing is gone.');
+}
+
 /* ---- entry ---- */
 
 const [command, ...args] = process.argv.slice(2);
@@ -208,6 +238,9 @@ const commands = {
   recent: () => recent(Math.min(Math.max(parseInt(args[0], 10) || 20, 1), 200)),
   hide: () => setStatus(args[0], 'hidden'),
   unhide: () => setStatus(args[0], 'public'),
+  songs,
+  'hide-song': () => setSongStatus(args[0], 'hidden'),
+  'unhide-song': () => setSongStatus(args[0], 'public'),
   sql: async () => {
     if (!args[0]) throw new Error('Pass some SQL in quotes.');
     const out = rows(await query(args[0]));
@@ -217,7 +250,7 @@ const commands = {
 
 if (!command || !commands[command]) {
   console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8')
-    .split('\n').slice(1, 27).map((l) => l.replace(/^ \* ?| ?\*\/$/, '')).join('\n'));
+    .split('\n').slice(1, 32).map((l) => l.replace(/^ \* ?| ?\*\/$/, '')).join('\n'));
   process.exit(command ? 1 : 0);
 }
 

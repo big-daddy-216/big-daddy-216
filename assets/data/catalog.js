@@ -1,9 +1,11 @@
 /* ===================================================================
-   THE MUSIC AND VIDEO LIBRARY
+   THE MUSIC AND VIDEO LIBRARY — the hand-edited half
 
-   This is the file you edit to put a song or a clip on the site. Upload
-   the actual file to the R2 bucket first (see EDITING.md), then add a
-   block here with the key it landed under.
+   Songs put up through the panel on music.html live in the database, not
+   here. This file is for anything you'd rather wire up by hand: upload
+   the file to the R2 bucket (see EDITING.md), then add a block here with
+   the key it landed under. Both sources are merged; if the same slug is
+   in both, the database wins.
 
    `src`, `cover` and `poster` are KEYS INSIDE THE BUCKET, not full web
    addresses — assets/js/catalog.js turns them into addresses at render
@@ -13,9 +15,8 @@
    Loaded as a plain <script>, not fetched, so the pages still work when
    opened straight off the disk.
 
-   Every field here is a column in migrations/0002_media.sql. That's
-   deliberate: when the upload page arrives, this file gets imported into
-   the database and the pages carry on reading the same shape.
+   Every field here is a column in migrations/0002_media.sql, so the two
+   sources have exactly the same shape and the pages can't tell them apart.
    =================================================================== */
 window.BD_CATALOG = {
   /* ---- Songs, newest first ----------------------------------------

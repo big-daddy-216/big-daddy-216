@@ -10,7 +10,9 @@ const LIMITS = {
   publish: [
     { windowMs: 60 * 60 * 1000, max: 10 },
     { windowMs: 24 * 60 * 60 * 1000, max: 60 }
-  ]
+  ],
+  // Songs and artwork through the band word. The admin token isn't counted.
+  upload: [{ windowMs: 60 * 60 * 1000, max: 30 }]
 };
 
 const PRUNE_AFTER_MS = 24 * 60 * 60 * 1000;

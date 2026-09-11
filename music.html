@@ -8,9 +8,12 @@
   <!-- =======================================================================
        THE MUSIC PAGE
 
-       To put a song up, you edit ONE file: assets/data/catalog.js. Upload
-       the mp3 to the R2 bucket, then add a block there with the key it
-       landed under. Nothing in this file needs touching.
+       To put a song up, scroll to the bottom of this page on the live site,
+       type the band word, and pick the file. That's it. Nothing in this file
+       needs touching.
+
+       (The hand-edited list in assets/data/catalog.js still works too, for
+       anything you'd rather wire up by hand.)
 
        Full instructions: EDITING.md, "Putting music and videos up".
        ======================================================================= -->
@@ -63,7 +66,7 @@
      track its own would mean two songs playing over each other the moment
      somebody clicks a second one. */
 
-  const { Button, Stamp, SectionHeading, Card } = window.NashSMomDesignSystem_77335a;
+  const { Button, Stamp, SectionHeading, Card, Field } = window.NashSMomDesignSystem_77335a;
   const SiteNav = window.BDNav.Nav;
   const Catalog = window.BDCatalog;
 
@@ -106,6 +109,207 @@
     );
   }
 
+  /* ---- putting a song up ------------------------------------------
+     Folded away behind one line at the bottom of the page. Needs the
+     band word once; after that the browser remembers, same as the jam
+     board. The file goes straight from here into the bucket and the
+     row is written when it lands, so the new song shows up on this
+     page — and for everyone else — the moment the bar fills. */
+  function fileSize(bytes) {
+    return bytes < 1048576 ? Math.round(bytes / 1024) + ' KB' : (Math.round(bytes / 104857.6) / 10) + ' MB';
+  }
+
+  function AddSong({ albums, onAdded }) {
+    const [open, setOpen] = React.useState(false);
+    const [mayPost, setMayPost] = React.useState(false);
+    const [passphrase, setPassphrase] = React.useState('');
+    const [file, setFile] = React.useState(null);
+    const [art, setArt] = React.useState(null);
+    const [title, setTitle] = React.useState('');
+    const [album, setAlbum] = React.useState('');
+    const [year, setYear] = React.useState(String(new Date().getFullYear()));
+    const [blurb, setBlurb] = React.useState('');
+    const [credits, setCredits] = React.useState('');
+    const [seconds, setSeconds] = React.useState(null);
+    const [busy, setBusy] = React.useState(false);
+    const [progress, setProgress] = React.useState(null);   // 0..1 while uploading
+    const [error, setError] = React.useState(null);
+    const [done, setDone] = React.useState(null);           // the song just added
+    // Bumped after a successful upload: file inputs can't be set from code,
+    // so the Fields are remounted empty instead (Field is a plain function
+    // component and can't take a ref).
+    const [generation, setGeneration] = React.useState(0);
+
+    React.useEffect(() => {
+      if (!Catalog.api.ready) return;
+      Catalog.api.mayPost().then((r) => setMayPost(!!r.may_post)).catch(() => {});
+    }, []);
+
+    function pickFile(ev) {
+      const f = ev.target.files && ev.target.files[0];
+      setFile(f || null);
+      setSeconds(null);
+      setDone(null);
+      if (!f) return;
+      // "4 Minute Clinic.m4a" -> "4 Minute Clinic", unless a name was typed already.
+      if (!title.trim()) setTitle(f.name.replace(/\.[a-z0-9]+$/i, '').replace(/_+/g, ' ').trim());
+      Catalog.measure(f).then(setSeconds);
+    }
+
+    async function submit(ev) {
+      ev.preventDefault();
+      setError(null);
+      setDone(null);
+      if (!file) { setError('Pick the audio file first.'); return; }
+      if (!title.trim()) { setError('Give it a name so people know what they are clicking.'); return; }
+
+      setBusy(true);
+      try {
+        if (!mayPost) {
+          if (!passphrase.trim()) { setError('You need the band word to put a song up.'); setBusy(false); return; }
+          await Catalog.api.signIn(passphrase.trim());
+          setMayPost(true);
+          setPassphrase('');
+        }
+
+        /* Artwork first, so the song can point at it from the moment it
+           exists. It's a small file, so it gets a sliver of the bar. */
+        let cover = null;
+        if (art) {
+          setProgress(0);
+          cover = (await Catalog.api.uploadArt(art, (p) => setProgress(p * 0.1))).key;
+        }
+
+        setProgress(art ? 0.1 : 0);
+        const result = await Catalog.api.uploadTrack(file, {
+          title: title.trim(),
+          album: album.trim() || null,
+          year: year.trim() || null,
+          blurb: blurb.trim() || null,
+          credits: credits.trim() || null,
+          duration_s: seconds,
+          cover
+        }, (p) => setProgress(art ? 0.1 + p * 0.9 : p));
+
+        onAdded(result.item);
+        setDone(result.item);
+        setFile(null); setArt(null); setTitle(''); setBlurb(''); setSeconds(null);
+        setGeneration((g) => g + 1);
+      } catch (err) {
+        setError(err.message || 'That did not work.');
+      } finally {
+        setBusy(false);
+        setProgress(null);
+      }
+    }
+
+    if (!open) {
+      return (
+        <section className="md-add">
+          <p className="md-add-line">
+            {mayPost ? 'Band members: ' : 'Got the band word? '}
+            <button type="button" className="md-add-toggle" onClick={() => setOpen(true)}>
+              {mayPost ? 'Add a song' : 'Put a song up'}
+            </button>
+          </p>
+        </section>
+      );
+    }
+
+    const knownAlbum = !!album.trim() && albums.indexOf(album.trim()) !== -1;
+
+    return (
+      <section className="md-add" aria-labelledby="md-add-heading">
+        <Card>
+          <div className="md-add-head">
+            <div>
+              <Stamp>For the band</Stamp>
+              <h2 id="md-add-heading" className="md-add-title">Put a song up</h2>
+            </div>
+            <button type="button" className="md-add-toggle" onClick={() => setOpen(false)}>Close</button>
+          </div>
+
+          {!Catalog.api.ready ? (
+            <p className="md-empty">
+              Uploading only works on the live site — open{' '}
+              <a href="https://bigdaddyand.co/music.html">bigdaddyand.co/music.html</a> and
+              do it from there.
+            </p>
+          ) : (
+            <form className="md-form" onSubmit={submit} noValidate>
+              <Field label="The song" required type="file"
+                     accept="audio/*,.m4a,.mp3,.wav,.ogg,.flac,.aac"
+                     hint={file
+                       ? fileSize(file.size) + (seconds ? ' · ' + Catalog.duration(seconds) : '')
+                       : 'MP3, M4A, WAV, OGG or FLAC — straight off the phone is fine.'}
+                     key={'song-' + generation} onChange={pickFile} />
+
+              <div className="md-form-row">
+                <Field label="Title" required placeholder="What it's called" maxLength={120}
+                       value={title} onChange={(ev) => setTitle(ev.target.value)} />
+                <Field label="Year" type="number" min="1900" max="2100" style={{ maxWidth: 140 }}
+                       value={year} onChange={(ev) => setYear(ev.target.value)} />
+              </div>
+
+              <Field label="Album" placeholder="Leave blank for a single" maxLength={120}
+                     hint="Songs with the same album name are grouped together and share its artwork."
+                     list="md-albums"
+                     value={album} onChange={(ev) => setAlbum(ev.target.value)} />
+              <datalist id="md-albums">
+                {albums.map((a) => <option key={a} value={a} />)}
+              </datalist>
+
+              <Field label="A line about it" type="textarea" rows={2} maxLength={500}
+                     placeholder="Where it came from, what it's about — optional."
+                     value={blurb} onChange={(ev) => setBlurb(ev.target.value)} />
+
+              <Field label="Credits" placeholder="Who played what — optional." maxLength={300}
+                     value={credits} onChange={(ev) => setCredits(ev.target.value)} />
+
+              <Field label="Artwork" type="file" accept="image/jpeg,image/png,image/webp"
+                     hint={knownAlbum
+                       ? 'Optional — this album already has artwork, which the song will use.'
+                       : 'Optional. A square JPEG or PNG; the album gets it, not just this song.'}
+                     key={'art-' + generation}
+                     onChange={(ev) => setArt((ev.target.files && ev.target.files[0]) || null)} />
+
+              {!mayPost && (
+                <Field label="The band word" required type="password"
+                       autoComplete="current-password"
+                       hint="Typed once — this browser remembers it after that."
+                       placeholder="The same word the jam board uses"
+                       value={passphrase} onChange={(ev) => setPassphrase(ev.target.value)} />
+              )}
+
+              {progress !== null && (
+                <div className="md-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                     aria-valuenow={Math.round(progress * 100)}>
+                  <span style={{ width: Math.round(progress * 100) + '%' }} />
+                </div>
+              )}
+
+              {error && <p className="md-error" role="alert">{error}</p>}
+              {done && (
+                <p className="md-done" role="status">
+                  <strong>{done.title}</strong> is up. It's on this page now, for everyone.
+                </p>
+              )}
+
+              <div className="md-form-actions">
+                <Button type="submit" variant="primary" disabled={busy}>
+                  {busy ? (progress !== null ? 'Uploading… ' + Math.round(progress * 100) + '%' : 'One sec…') : 'Put it up'}
+                </Button>
+                <span className="md-fineprint">
+                  Anyone with the link can play it once it's up. Don't put unreleased material here.
+                </span>
+              </div>
+            </form>
+          )}
+        </Card>
+      </section>
+    );
+  }
+
   function MusicPage() {
     const [tracks, setTracks] = React.useState(null);   // null = still loading
     const [activeSlug, setActiveSlug] = React.useState(null);
@@ -115,6 +319,26 @@
     const audioRef = React.useRef(null);
 
     React.useEffect(() => { Catalog.load('tracks').then(setTracks); }, []);
+
+    /* A song just uploaded from this page goes straight into the list —
+       no reload, and no waiting on the API to come round. */
+    function addTrack(item) {
+      setTracks((list) => [Catalog.prepare(item)].concat(list || []));
+    }
+
+    /* A length the uploader couldn't measure gets filled in the first
+       time the track plays, from the file itself. */
+    function learnDuration(slug, secs) {
+      if (!secs || !isFinite(secs)) return;
+      setTracks((list) => (list || []).map((t) =>
+        t.slug === slug && !t.duration_s ? Object.assign({}, t, { duration_s: secs }) : t));
+    }
+
+    const albums = React.useMemo(() => {
+      const names = [];
+      (tracks || []).forEach((t) => { if (t.album && names.indexOf(t.album) === -1) names.push(t.album); });
+      return names;
+    }, [tracks]);
 
     const active = tracks && tracks.filter((t) => t.slug === activeSlug)[0];
 
@@ -209,6 +433,8 @@
               </div>
             </section>
           ))}
+
+          {tracks !== null && <AddSong albums={albums} onAdded={addTrack} />}
         </main>
 
         {/* One player for the page. preload="none" so opening the page
@@ -220,6 +446,7 @@
           onPause={() => setPlaying(false)}
           onEnded={() => { setPlaying(false); setProgress(0); }}
           onTimeUpdate={(ev) => setProgress(ev.target.currentTime)}
+          onLoadedMetadata={(ev) => learnDuration(activeSlug, ev.target.duration)}
           onError={() => { if (activeSlug) setError('That track could not be loaded.'); }}
         />
 
