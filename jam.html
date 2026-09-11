@@ -36,7 +36,7 @@
       // Where the "listen to this loop" link in your email should point.
       // Kept as a real address rather than read from the browser, so a
       // loop recorded on a test server still emails you a working link.
-      siteUrl: "https://bigdaddyand.co/jam.html",
+      siteUrl: "https://bigdaddyand.co/jam",
 
       // The subject line on the emails you receive.
       subject: "Big Daddy jam submission (not a TES lead)"
@@ -53,7 +53,7 @@
   <meta name="description" content="Big Daddy and Co. is hiring. Fully remote, Cleveland roots, applications reviewed on a rolling basis. Record a one-bar loop in your browser and submit it for jams and paying gigs alike.">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Careers at Big Daddy and Co. — Jam With Us!">
-  <meta property="og:url" content="https://bigdaddyand.co/jam.html">
+  <meta property="og:url" content="https://bigdaddyand.co/jam">
   <meta property="og:image" content="https://bigdaddyand.co/assets/brand/big-daddy-og-banner.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
@@ -1428,7 +1428,7 @@
           <Card>
             <p className="jam-empty">
               The board lives on the real site — open{' '}
-              <a href="https://bigdaddyand.co/jam.html">bigdaddyand.co/jam.html</a>{' '}
+              <a href="https://bigdaddyand.co/jam">bigdaddyand.co/jam</a>{' '}
               to hear what everyone has been posting. Everything else on this page
               works right here.
             </p>
@@ -2363,7 +2363,7 @@
 
     /* --- sharing ---------------------------------------------------- */
     const loopCode = E.encodeLoop(pattern);
-    const base = (CONFIG.siteUrl || 'https://bigdaddyand.co/jam.html').replace(/#.*$/, '');
+    const base = (CONFIG.siteUrl || 'https://bigdaddyand.co/jam').replace(/#.*$/, '');
     const loopLink = base + '#loop=' + loopCode;
 
     const download = React.useCallback(() => {
