@@ -36,6 +36,19 @@
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:image" content="https://bigdaddyand.co/assets/brand/big-daddy-og-banner.png">
 
+  <!-- What stands in for album art when a record hasn't got any (the
+       "Singles" group, for one): a clip that loops silently, like a gif.
+       Both files live in assets/video/. Set `loop` to null for a plain
+       tile with the album name on it. -->
+  <script>
+    window.BD_MUSIC = {
+      artFallback: {
+        loop:   "assets/video/chasing-big-daddy-banner.mp4",
+        poster: "assets/video/chasing-big-daddy-banner-poster.jpg"
+      }
+    };
+  </script>
+
   <!-- Styles: design system, page overrides, then this page's own bits -->
   <link rel="stylesheet" href="assets/css/site.css">
   <link rel="stylesheet" href="assets/css/enhance.css">
@@ -69,6 +82,43 @@
   const { Button, Stamp, SectionHeading, Card, Field } = window.NashSMomDesignSystem_77335a;
   const SiteNav = window.BDNav.Nav;
   const Catalog = window.BDCatalog;
+
+  /* ---- art for a record that hasn't got any ------------------------
+     A clip looping silently in the square where the cover would be. It
+     only plays while it's on screen, and not at all for people who've
+     asked their system for less motion — they get the poster. */
+  function ArtLoop({ name }) {
+    const fb = (window.BD_MUSIC && window.BD_MUSIC.artFallback) || {};
+    const ref = React.useRef(null);
+
+    React.useEffect(() => {
+      const el = ref.current;
+      if (!el || !fb.loop) return;
+      const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (reduced) return;
+      const io = new IntersectionObserver(([entry]) => {
+        if (!entry) return;
+        if (entry.isIntersecting) {
+          if (!el.getAttribute('src')) el.setAttribute('src', fb.loop);
+          const p = el.play(); if (p && p.catch) p.catch(() => {});
+        } else {
+          el.pause();
+        }
+      }, { threshold: 0.15 });
+      io.observe(el);
+      return () => io.disconnect();
+    }, [fb.loop]);
+
+    if (!fb.loop) return <div className="md-album-blank" aria-hidden="true">{name}</div>;
+
+    return (
+      <div className="md-album-loop" aria-hidden="true">
+        <video ref={ref} muted loop playsInline preload="none"
+               poster={fb.poster} tabIndex={-1} disablePictureInPicture />
+        <span className="md-album-loop-label">{name}</span>
+      </div>
+    );
+  }
 
   /* ---- one row in the list --------------------------------------- */
   function Track({ track, active, playing, progress, onToggle, onSeek }) {
@@ -412,7 +462,7 @@
               <div className="md-album-art">
                 {group.cover
                   ? <img src={group.cover} alt={'Cover of ' + group.name} loading="lazy" />
-                  : <div className="md-album-blank" aria-hidden="true">{group.name}</div>}
+                  : <ArtLoop name={group.name} />}
               </div>
               <div className="md-album-body">
                 <h2 className="md-album-title">{group.name}</h2>

@@ -330,6 +330,14 @@ Uploads land in the bucket under `music/<album>/<song>.<ext>`; artwork under
 `music/covers/`. Songs with the same title get `-2`, `-3` — nothing is ever
 overwritten.
 
+### The square where the artwork would be
+
+A record with no artwork — *Singles*, for one — shows a clip looping
+silently in the square instead, like a gif. Which clip is set at the top of
+`music.html` in `window.BD_MUSIC.artFallback`; set `loop` to `null` for a
+plain tile with the album name on it. It only plays while it's on screen,
+and people who've asked their system for reduced motion get the still.
+
 ### The hand-edited list still works
 
 `assets/data/catalog.js` is read too, and merged with the database (the
