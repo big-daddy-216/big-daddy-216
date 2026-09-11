@@ -915,19 +915,30 @@
 }
 
 /* ---- riffing on somebody ---- */
+/* Sits inside the studio's container, directly above the card, so it
+   reads as a note on the instrument rather than a banner on the page. */
 .jam-remix-banner {
-  max-width: var(--container);
-  margin: var(--sp-5) auto 0;
-  padding: var(--sp-3) var(--gutter);
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
   display: flex; flex-wrap: wrap; align-items: center;
   justify-content: space-between; gap: var(--sp-3);
-  border-top: 1px solid var(--ember-600);
-  border-bottom: 1px solid var(--ember-600);
+  border: 1px solid var(--ember-600);
+  border-radius: var(--r-md);
   background: rgba(240, 138, 29, 0.08);
   color: var(--bone-200); font-size: var(--fs-sm);
 }
 .jam-remix-banner strong { color: var(--ember-glow); }
-.jam-remix-actions { display: flex; gap: var(--sp-4); flex-wrap: wrap; }
+.jam-remix-actions { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+
+.jam-remix-close {
+  background: none; border: 1px solid transparent; border-radius: var(--r-sm);
+  color: var(--bone-400); cursor: pointer;
+  font: 300 22px/1 system-ui, sans-serif;
+  width: 32px; height: 32px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.jam-remix-close:hover { color: var(--bone-100); border-color: var(--border-strong); }
+.jam-remix-close:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .jam-linkbtn {
   background: none; border: 0; padding: 0; cursor: pointer;
   font-family: var(--font-heading); font-size: var(--fs-sm);

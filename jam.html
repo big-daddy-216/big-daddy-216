@@ -899,6 +899,8 @@
             assessed. There is no wrong answer. There is, however, a boring one.
           </p>
 
+          {props.banner}
+
           <Card padding="clamp(20px,3vw,36px)">
             <Transport {...props} layerName={selectedName} />
 
@@ -1530,7 +1532,10 @@
 
   /* ---- riffing on somebody ---------------------------------------- */
 
-  function RemixBanner({ parent, onClear, onHearOriginal }) {
+  /* Dismissing only hides the notice — the visitor is still riffing on
+     the parent, and publishing still links back to it. "Start fresh
+     instead" is the one that actually lets go. */
+  function RemixBanner({ parent, onClear, onHearOriginal, onDismiss }) {
     if (!parent) return null;
     return (
       <div className="jam-remix-banner" role="status">
@@ -1541,6 +1546,8 @@
         <span className="jam-remix-actions">
           <button type="button" className="jam-linkbtn" onClick={onHearOriginal}>Hear the original</button>
           <button type="button" className="jam-linkbtn" onClick={onClear}>Start fresh instead</button>
+          <button type="button" className="jam-remix-close" onClick={onDismiss}
+                  aria-label="Hide this notice" title="Hide this notice">×</button>
         </span>
       </div>
     );
@@ -1804,6 +1811,9 @@
     });
     const [filters, setFilters] = React.useState({ sort: 'recent', band: '', voice: '', hasSample: false });
     const [remixParent, setRemixParent] = React.useState(null);
+    // A dismissed notice comes back if they pick a different jam to riff on.
+    const [bannerHidden, setBannerHidden] = React.useState(false);
+    React.useEffect(() => { setBannerHidden(false); }, [remixParent && remixParent.id]);
     const [previewId, setPreviewId] = React.useState(null);
     const [previewLoading, setPreviewLoading] = React.useState(null);
     const [mayPost, setMayPost] = React.useState(false);
@@ -2399,15 +2409,18 @@
       <React.Fragment>
         <SiteNav current="jam" cta={{ label: 'Back to the Band', href: 'index.html', variant: 'outline' }} />
         <JamIntro source={loaded.source} />
-        <RemixBanner
-          parent={remixParent}
-          onClear={() => setRemixParent(null)}
-          onHearOriginal={() => {
-            const jam = board.jams.filter((j) => j.id === remixParent.id)[0];
-            if (jam) playPreview(jam); else openLineage(remixParent.id);
-          }}
-        />
         <Studio
+          banner={remixParent && !bannerHidden ? (
+            <RemixBanner
+              parent={remixParent}
+              onClear={() => setRemixParent(null)}
+              onDismiss={() => setBannerHidden(true)}
+              onHearOriginal={() => {
+                const jam = board.jams.filter((j) => j.id === remixParent.id)[0];
+                if (jam) playPreview(jam); else openLineage(remixParent.id);
+              }}
+            />
+          ) : null}
           pattern={pattern}
           bpm={pattern.bpm}
           playing={playing}
