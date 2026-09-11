@@ -200,8 +200,12 @@
      ================================================================= */
   function JamIntro({ source }) {
     return (
-      <section className="nm-grain" style={{ position: 'relative', padding: 'var(--section-y) 0 var(--sp-7)' }}>
-        <div className="nm-container" style={{ position: 'relative', zIndex: 2 }}>
+      <section className="nm-grain" style={{ position: 'relative', padding: 'clamp(28px, 4vw, 48px) 0 var(--sp-7)' }}>
+        {/* Two columns on a wide screen: the posting on the left, the badge
+            filling what would otherwise be dead space on the right. The
+            badge drops out below the breakpoint where there's no room. */}
+        <div className="nm-container jam-intro" style={{ position: 'relative', zIndex: 2 }}>
+         <div>
           <SectionHeading kicker="Careers · Now Hiring" title={<span>Jam<br/>With Us!</span>} glow />
           <p style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-lead)',
                       color: 'var(--bone-300)', marginTop: 22, maxWidth: 640, lineHeight: 1.5 }}>
@@ -230,6 +234,9 @@
               it for the whole link — they're easy to cut short.
             </div>
           )}
+         </div>
+         <img className="jam-intro-badge" src="assets/brand/big-daddy-logo-badge.svg"
+              alt="" aria-hidden="true" />
         </div>
       </section>
     );
@@ -643,7 +650,10 @@
       (props.sampleKeyboard ? ' · sample' : '');
 
     return (
-      <section style={{ padding: '0 0 var(--section-y)' }}>
+      <section style={{ padding: '0 0 var(--sp-5)' }}>
+        {/* Bottom padding is deliberately small: the section that follows
+            brings its own full top padding, and the two used to stack into
+            a gap you could park a van in. */}
         {/* A two-bar loop borrows the wide container: thirty-two steps plus
             a label column need more room than the standard column, and on
             a big screen that's the difference between seeing the whole loop
@@ -652,11 +662,11 @@
         <div className={'nm-container' + (props.steps === 32 ? ' jam-wide' : '')}>
           <SectionHeading kicker="Step One" title="The Audition" />
           <p style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-body)',
-                      color: 'var(--bone-300)', margin: '18px 0 26px', maxWidth: 680, lineHeight: 1.55 }}>
-            Two bars, thirty-two steps. Build a beat, then record a riff over it, let it loop,
-            and play another one on top — up to four layers, each with its own voice. This is
-            the part where creativity is formally assessed. There is no wrong answer. There
-            is, however, a boring one.
+                      color: 'var(--bone-300)', margin: '18px 0 40px', maxWidth: 680, lineHeight: 1.55 }}>
+            One bar to start, sixteen steps — flip it to two if you need the room. Build a beat,
+            then record a riff over it, let it loop, and play another one on top: up to four
+            layers, each with its own voice. This is the part where creativity is formally
+            assessed. There is no wrong answer. There is, however, a boring one.
           </p>
 
           <Card padding="clamp(20px,3vw,36px)">

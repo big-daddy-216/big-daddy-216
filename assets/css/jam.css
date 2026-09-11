@@ -9,6 +9,34 @@
    ===================================================================== */
 
 /* ---------------------------------------------------------------------
+   INTRO — the job posting, with the badge in the space to its right
+   --------------------------------------------------------------------- */
+
+.jam-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(24px, 4vw, 64px);
+}
+
+/* A touch of tilt and the same ember glow the headline wears, so it
+   reads as part of the poster rather than a logo pasted on afterwards. */
+.jam-intro-badge {
+  width: clamp(200px, 22vw, 320px);
+  height: auto;
+  transform: rotate(-4deg);
+  filter: drop-shadow(0 0 28px rgba(255, 179, 71, 0.22));
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Below this there's no dead space to fill — the text takes the width. */
+@media (max-width: 900px) {
+  .jam-intro { grid-template-columns: 1fr; }
+  .jam-intro-badge { display: none; }
+}
+
+/* ---------------------------------------------------------------------
    TRANSPORT BAR — play, record, tempo
    --------------------------------------------------------------------- */
 
