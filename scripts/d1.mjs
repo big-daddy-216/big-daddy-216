@@ -183,9 +183,12 @@ async function recent(limit) {
 }
 
 async function setStatus(id, status) {
-  if (!id) { console.error('Which jam? Pass its id.'); process.exit(1); }
+  /* Throwing rather than exiting: process.exit() while a fetch is still
+     settling trips a libuv assertion on Windows and prints a crash on top of
+     the real message. The catch at the bottom sets the exit code instead. */
+  if (!id) throw new Error('Which jam? Pass its id.');
   const found = rows(await query('SELECT id, title, status FROM jams WHERE id = ?', [id]));
-  if (!found.length) { console.error('No jam with the id ' + id + '.'); process.exit(1); }
+  if (!found.length) throw new Error('No jam with the id ' + id + '.');
 
   await query('UPDATE jams SET status = ? WHERE id = ?', [status, id]);
   console.log(`"${found[0].title}" is now ${status}.`);
@@ -206,7 +209,7 @@ const commands = {
   hide: () => setStatus(args[0], 'hidden'),
   unhide: () => setStatus(args[0], 'public'),
   sql: async () => {
-    if (!args[0]) { console.error('Pass some SQL in quotes.'); process.exit(1); }
+    if (!args[0]) throw new Error('Pass some SQL in quotes.');
     const out = rows(await query(args[0]));
     console.log(out.length ? JSON.stringify(out, null, 2) : 'OK (no rows returned)');
   }
@@ -221,5 +224,5 @@ if (!command || !commands[command]) {
 requireCredentials();
 commands[command]().catch((err) => {
   console.error('\n' + err.message);
-  process.exit(1);
+  process.exitCode = 1;      // not process.exit(); see setStatus above
 });
